@@ -1,0 +1,21 @@
+[project]
+name = "shipping"
+version = "0.1.0"
+description = "Shipping Department Logistics and Compensation Service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "confluent-kafka[avro]>=2.3.0",
+    "fastavro>=1.9.4",
+    "sqlalchemy>=2.0.27",
+    "psycopg2-binary>=2.9.9",
+    "pytest>=9.0.3",
+]
+
+[tool.uv]
+managed = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches and local testing artifacts
+.pytest_cache/
+.ruff_cache/
+.pydantic_cache/
+.uv/
+htmlcov/
+.coverage
+.coverage.*
+
+# Virtual Environments and locks
+.venv/
+venv/
+ENV/
+
+# Local database dumps and engine file locks
+*.db
+*.sqlite
+.shared_postgres_data/
+
+# Application and service runtime logs (Task logs we stream out-of-band)
+*.log
+sales/*.log
+shipping/*.log
+finance/*.log
+notifications/*.log
+
+# Operating system metadata files
+.DS_Store
+Thumbs.db

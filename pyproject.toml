@@ -1,0 +1,20 @@
+[project]
+name = "tshirt-enterprise-platform"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8.0.0",
+    "sales",
+    "shipping",
+    "finance",
+    "notifications",
+]
+
+[tool.uv.sources]
+sales = { workspace = true }
+shipping = { workspace = true }
+finance = { workspace = true }
+notifications = { workspace = true }
+
+[tool.uv.workspace]
+members = ["sales", "finance", "shipping", "notifications"]

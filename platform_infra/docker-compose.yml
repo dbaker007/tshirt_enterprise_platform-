@@ -1,0 +1,53 @@
+services:
+  # =========================================================================
+  # 1. THE MESSAGE CORE (KAFKA BROKER IN COMBINED KRAFT MODE)
+  # =========================================================================
+  kafka-broker:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: enterprise_kafka_broker
+    ports:
+      - "9092:9092"  # Exposed for host laptop Python scripts
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-broker:29093'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://127.0.0.1:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+
+  # =========================================================================
+  # 2. THE CONTRACT GATEKEEPER (APICURIO RESILIENT COMPATIBLE REGISTRY)
+  # =========================================================================
+  schema-registry:
+    image: apicurio/apicurio-registry-mem:2.5.8.Final
+    container_name: enterprise_schema_registry
+    ports:
+      - "8081:8080"  # Maps internal 8080 UI to your host laptop's port 8081
+    depends_on:
+      - kafka-broker
+    environment:
+      # Automatically wires Apicurio to your Kafka broker network
+      APICURIO_STORAGE_KIND: "kafka"
+      APICURIO_KAFKA_BOOTSTRAP_SERVERS: "kafka-broker:29092"
+
+  # =========================================================================
+  # 3. THE SHARED DATA LEDGER (POSTGRESQL INSTANCE)
+  # =========================================================================
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: enterprise_postgres_ledger
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: platform_admin
+      POSTGRES_PASSWORD: admin_secure_password
+      POSTGRES_DB: platform_shared_ledger

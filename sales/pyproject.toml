@@ -1,0 +1,25 @@
+[project]
+name = "sales"
+version = "0.1.0"
+description = "Sales API Gateway and Transactional Outbox Engine"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "confluent-kafka[avro]>=2.3.0",
+    "fastavro>=1.9.4",
+    "sqlalchemy>=2.0.27",
+    "psycopg2-binary>=2.9.9",
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "ruff>=0.3.0",
+]
+
+[tool.uv]
+managed = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

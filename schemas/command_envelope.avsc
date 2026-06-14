@@ -1,0 +1,39 @@
+{
+  "type": "record",
+  "name": "CommandEnvelope",
+  "namespace": "com.tshirt.sales",
+  "doc": "Strictly typed enterprise command envelope enforcing data governance across all worker queues.",
+  "fields": [
+    { "name": "command_id", "type": "string", "doc": "Unique tracking ID for this specific command task instance" },
+    { "name": "order_id", "type": "string", "doc": "The master transaction UUID string this task belongs to" },
+    { "name": "action", "type": "string", "doc": "The explicit executable directive string (NEW_SALE or CANCEL_TRANSACTION)" },
+    {
+      "name": "payload",
+      "doc": "Strictly typed checkout metadata payload record package required by worker subgraphs.",
+      "type": {
+        "type": "record",
+        "name": "OrderPayloadRecord",
+        "fields": [
+          { "name": "customer_name", "type": "string" },
+          { "name": "customer_email", "type": "string" },
+          { "name": "amount", "type": "double" },
+          { "name": "item_id", "type": "string" },
+          {
+            "name": "shipping_address",
+            "doc": "Legitimate, structured delivery address record block.",
+            "type": {
+              "type": "record",
+              "name": "AddressRecord",
+              "fields": [
+                { "name": "street", "type": "string" },
+                { "name": "city", "type": "string" },
+                { "name": "state", "type": "string", "doc": "Two-letter US state code string (e.g., MI, OH, NY)" },
+                { "name": "postal_code", "type": "string" }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
