@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # =========================================================================
   # 1. THE MESSAGE CORE (KAFKA BROKER IN COMBINED KRAFT MODE)
@@ -40,7 +42,31 @@ services:
       APICURIO_KAFKA_BOOTSTRAP_SERVERS: "kafka-broker:29092"
 
   # =========================================================================
-  # 3. THE SHARED DATA LEDGER (POSTGRESQL INSTANCE)
+  # 3. NATIVE INFRASTRUCTURE TOPIC PROVISIONER GATEWAY
+  # =========================================================================
+  kafka_init_topics:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: enterprise_kafka_topic_provisioner
+    depends_on:
+      - kafka-broker
+    entrypoint: [ "sh", "-c" ]
+    command: |
+      "
+      echo '⏳ Waiting for Kafka cluster broker to secure internal port 29092...'
+      cub kafka-ready -b kafka-broker:29092 1 30
+      
+      echo '🚀 Provisioning corporate multi-department target routing channels...'
+      # 🛠️ FIXED: Standardized target domain routing strings to use kafka-broker:29092!
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-broker:29092 --partitions 1 --replication-factor 1 --topic finance_commands
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-broker:29092 --partitions 1 --replication-factor 1 --topic shipping_commands
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-broker:29092 --partitions 1 --replication-factor 1 --topic notifications_commands
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-broker:29092 --partitions 1 --replication-factor 1 --topic saga_replies
+      
+      echo '✔ [SUCCESS]: All enterprise partition slots committed to cluster disk.'
+      "
+
+  # =========================================================================
+  # 4. THE SHARED DATA LEDGER (POSTGRESQL INSTANCE)
   # =========================================================================
   postgres-db:
     image: postgres:15-alpine
@@ -51,3 +77,25 @@ services:
       POSTGRES_USER: platform_admin
       POSTGRES_PASSWORD: admin_secure_password
       POSTGRES_DB: platform_shared_ledger
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_admin -d platform_shared_ledger"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
+
+  # =========================================================================
+  # 5. DISTRIBUTED TELEMETRY HUB (JAEGER OTLP http/gRPC COLLECTOR)
+  # =========================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: enterprise_jaeger_collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # Web UI Query Interface Console Port Gateway
+      - "4317:4317"    # OTLP gRPC Ingestion Port Gateway
+      - "4318:4318"    # OTLP HTTP Ingestion Port Gateway
+    restart: unless-stopped

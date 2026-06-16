@@ -8,6 +8,7 @@ A reference architecture demonstrating an asynchronous, event-driven platform ut
 *   **Transactional Outbox Pattern**: Application nodes execute dual-writes to local state and private outbox tables inside a single, atomic SQL transaction block. Out-of-band background daemons stream messages onto Kafka.
 *   **Decoupled Worker Grid**: Microservices are completely sandboxed. They possess unique relational schemas, separate database connections, and consume from private, dedicated command queues.
 *   **Automated Compensation Rollbacks**: The central conductor initiates targeted cancellation routines across the mesh to restore system-wide state parity out-of-band upon downstream business or compliance failures.
+*   **Distributed Telemetry Tracing**: End-to-end W3C trace context propagation automatically stitches together asynchronous network hops, database boundaries, and LangGraph workflow nodes inside a single visual waterfall tree chart.
 
 ## Repository Topology
 
@@ -15,10 +16,15 @@ The workspace follows an enterprise `src/` directory layout to isolate productio
 
 ```text
 tshirt_enterprise_platform/
-├── platform_infra/         # Docker Compose configurations (Kafka, Postgres, Apicurio)
+├── diagnostics/            # Consolidated direct wire-sniffers and snapshot auditors
+├── platform_infra/         # Infrastructure configurations, schemas, and container orchestrations
+│   ├── docker-compose.yml
+│   └── schema.sql          # Unified Single Source of Truth for Relational DB Schemas
 ├── schemas/                # Global Single Source of Truth Avro Contracts
 │   ├── command_envelope.avsc
 │   └── saga_reply.avsc
+├── observability/          # Shared Core Telemetry and Class Inheritance Framework
+│   └── src/observability/  # Parent engines for Outbox Daemons and Consumer Apps
 ├── sales/                  # The Saga Conductor Domain
 │   ├── src/sales/          # Isolated package modules (app, db, orchestrator)
 │   └── tests/              # Independent, asynchronous integration test matrix
@@ -57,3 +63,4 @@ make test-all
 *   **Kafka Broker**: `localhost:9092`
 *   **Apicurio Schema Registry**: `http://localhost:8081` (ccompat v7 API layer)
 *   **PostgreSQL Engine DB**: `postgresql://platform_admin:admin_secure_password@localhost:5432/platform_shared_ledger`
+*   **Jaeger Telemetry UI**: `http://localhost:16686` (OTLP Ingestion Port: `4318`)

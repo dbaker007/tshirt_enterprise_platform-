@@ -1,6 +1,6 @@
 # Import your active production connection parameters and model trackers directly
 from sales.db import DATABASE_URL, Base
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 engine = create_engine(DATABASE_URL)
@@ -8,24 +8,12 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 
 def get_clean_test_db_session():
-    """Ensures sales schemas exist, truncates rows out-of-band to guarantee data
+    """Drops and rebuilds all tables to guarantee complete data isolation
 
-    isolation, and returns an isolated testing session handler.
+    across parallel test execution sweeps, and returns a clean session.
     """
-    # Force synchronization check
+    # Force a complete clean-slate cycle across all tables (including saga_states)
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
-    db = TestingSessionLocal()
-    try:
-        # Encapsulate the raw SQL purge script completely within the data namespace boundary
-        db.execute(
-            text("TRUNCATE TABLE customers, invoices, outbox RESTART IDENTITY CASCADE;")
-        )
-        db.commit()
-        return db
-    except Exception as e:
-        db.rollback()
-        print(
-            f"❌ [SALES TEST DB CRITICAL]: Data purge verification sweep failed: {str(e)}"
-        )
-        raise e
+    return TestingSessionLocal()
