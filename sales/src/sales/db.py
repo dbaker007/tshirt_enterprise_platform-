@@ -5,7 +5,7 @@ from datetime import datetime
 
 # 🏆 IMPORT THE UNIVERSAL W3C CONTEXT PROPAGATOR HOOK
 from opentelemetry import propagate
-from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 logger = logging.getLogger("SALES_SERVICE.DATABASE")
@@ -24,7 +24,7 @@ class Customer(Base):
     __tablename__ = "customers"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    email = Column(String, unique=True, index=True)
+    email = Column(String)
 
 
 class Invoice(Base):
@@ -41,9 +41,8 @@ class Outbox(Base):
     __tablename__ = "sales_outbox"
     id = Column(Integer, primary_key=True, index=True)
     topic = Column(String, nullable=False)
-    key = Column(String, nullable=False)
-    payload = Column(String, nullable=False)
-    # 🛠️ THE EXACT W3C TELEMETRY CARRIER STORAGE FIELD
+    partition_key = Column(String, nullable=False)
+    payload = Column(Text, nullable=False)
     trace_context = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -136,7 +135,7 @@ def persist_sale_and_stage_outbox(transaction: dict) -> tuple[str, int]:
 
             outbox_event = Outbox(
                 topic=queue_topic,
-                key=generated_order_id,
+                partition_key=generated_order_id,
                 payload=json.dumps(envelope_data),
                 # Save the explicit W3C string context natively on the record
                 trace_context=w3c_traceparent_string,

@@ -95,7 +95,7 @@ class OutboxDaemonEngine(Generic[T_Model]):
         W3C trace metadata headers, and routing it cleanly to the Kafka producer.
         """
         target_topic = str(getattr(row, "topic", "unknown_topic"))
-        row_key = str(getattr(row, "key", "unknown_key"))
+        row_key = str(getattr(row, "partition_key", "unknown_key"))
         raw_payload_string = getattr(row, "payload", None)
         stored_trace_context = getattr(row, "trace_context", None)
 

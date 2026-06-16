@@ -1,17 +1,9 @@
 import json
-import logging
-import os
-import sys
-import time
 import uuid
 
-from confluent_kafka import Consumer, KafkaError
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroDeserializer
-from confluent_kafka.serialization import MessageField, SerializationContext
 from observability.framework.app_base import MicroserviceConsumerApp
 
-from sales.db import Outbox, SagaState, SessionLocal, init_sales_db
+from sales.db import Outbox, SagaState, SessionLocal
 
 
 class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
@@ -65,7 +57,7 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
             }
 
             rollback_command_row = Outbox(
-                topic=queue_topic, key=order_id, payload=json.dumps(envelope)
+                topic=queue_topic, partition_key=order_id, payload=json.dumps(envelope)
             )
             db.add(rollback_command_row)
             self.logger.info(
@@ -74,26 +66,43 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
 
     def process_incoming_saga_reply(self, reply: dict):
         """Processes worker responses against the central checklist logs to guide the Saga path."""
+        # 🔬 DEBUG ACCORDION GATE 1: Dump the raw string payload dict shape right on ingestion
+        print(
+            f"\n📥 [ORCHESTRATOR RAW INGESTION]: Received packet layout: {repr(reply)} (Type: {type(reply)})"
+        )
+
         db = SessionLocal()
         order_id = reply.get("order_id")
         dept = reply.get("department")
         status = reply.get("status")
 
+        print(
+            f"   ├── Parsed Keys -> order_id: {repr(order_id)} | dept: {repr(dept)} | status: {repr(status)}"
+        )
+
         try:
             state = db.query(SagaState).filter(SagaState.order_id == order_id).first()
             if not state:
+                # 🔬 DEBUG ACCORDION GATE 2: Track if the DB lookup fails due to structure mismatches
+                print(
+                    f"   |── ❌ [LOOKUP FAILURE]: SagaState record not found on disk for Order UUID: {order_id}"
+                )
                 self.logger.warning(
                     f"Saga state log record not found for Order UUID: {order_id}. Skipping."
                 )
                 return
 
-            if state.status in ["COMPLETED", "REJECTED"]:
+            if state.status in ["COMPLETED", "REJECTED", "IN_TRANSIT"]:
+                print(
+                    f"   └── ⚠️ [ALREADY TERMINAL]: State is already {state.status}. Skipping."
+                )
                 return
 
             self.logger.info(
                 f"Evaluating Status Reply | Department: {dept} | Outcome: {status} | Order: {order_id}"
             )
 
+            # Assign single, explicit department status metrics
             if dept == "FINANCE":
                 state.finance_status = status
             elif dept == "SHIPPING":
@@ -101,33 +110,42 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
             elif dept == "NOTIFICATIONS":
                 state.notifications_status = status
 
-            if status == "FAILED" or state.finance_status == "PAYMENT_REJECTED":
-                state.status = "ROLLING_BACK"
-                self.issue_compensating_cancellations(
-                    db, order_id, triggering_dept=dept
-                )
+            # Check for explicit failure conditions safely
+            if (
+                status == "FAILED"
+                or state.finance_status == "PAYMENT_REJECTED"
+                or state.shipping_status == "FAILED"
+            ):
                 state.status = "REJECTED"
                 db.commit()
-                self.logger.warning(
-                    f"Saga Complete Fail State Logged | Order UUID: {order_id} has been fully canceled."
+                print(
+                    f"   └── 🚨 [STATE SET]: Hard REJECTED recorded for Order: {order_id}"
                 )
                 return
 
+            # 🛠️ FIXED: Removed the ridiculous multi-string array checks.
+            # Check for the exactly one correct deterministic string output per worker gate.
             if (
-                state.finance_status in ["SUCCESS", "CREDIT_APPROVED"]
-                and state.shipping_status in ["SUCCESS", "SHIPMENT_SECURED"]
-                and state.notifications_status
-                in ["SUCCESS", "PENDING_FINANCIAL_CLEARANCE"]
+                state.finance_status == "CREDIT_APPROVED"
+                and state.shipping_status == "SHIPMENT_SECURED"
+                and state.notifications_status == "SUCCESS"
             ):
-                state.status = "COMPLETED"
+                state.status = "IN_TRANSIT"
+                print(
+                    f"   └── 🚚 [STATE EVOLUTION]: All guards cleared green! Flipped Order {order_id} to IN_TRANSIT."
+                )
                 self.logger.info(
-                    f"🏆 SUCCESS | All Workers Cleared Checklist | Saga Order: {order_id} Successfully Closed."
+                    f"🏆 IN_TRANSIT | All Workers Cleared Checklist | Saga Order: {order_id} Successfully Dispatched."
                 )
 
             db.commit()
+            print(
+                f"   └── 💾 [DB COMMIT]: Saved state fields to ledger disk. Status: {state.status} | Fin: {state.finance_status} | Ship: {state.shipping_status} | Notif: {state.notifications_status}"
+            )
 
         except Exception as e:
             db.rollback()
+            print(f"   └── 💥 [CRITICAL CONDUCTOR EXCEPTION]: {str(e)}")
             self.logger.error(f"Saga Conductor Database Process Exception: {str(e)}")
         finally:
             db.close()

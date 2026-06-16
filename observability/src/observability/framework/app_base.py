@@ -68,6 +68,10 @@ class MicroserviceConsumerApp(ABC):
         pass
 
     def start_polling_loop(self):
+        """Maintains the continuous, high-speed inbound consumer execution loop,
+
+        explicitly guarding against empty poll timeouts and initialization errors.
+        """
         pid = os.getpid()
         self.logger.info(
             f"Saga Node Booted | Process ID: {pid} | Subscribed to Channel: [{self.topic_channel}]"
@@ -82,6 +86,7 @@ class MicroserviceConsumerApp(ABC):
                     if msg.error().code() == KafkaError._PARTITION_EOF:
                         continue
                     else:
+                        # Log the broker error and continue polling
                         self.logger.warning(
                             f"⚠️ Broker Subscription Sync Code: {msg.error()}"
                         )

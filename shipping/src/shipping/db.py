@@ -31,7 +31,7 @@ class ShippingOutbox(Base):
     __tablename__ = "shipping_outbox"
     id = Column(Integer, primary_key=True, index=True)
     topic = Column(String, nullable=False)
-    key = Column(String, nullable=False)
+    partition_key = Column(String, nullable=False)
     payload = Column(String, nullable=False)
     # THE EXACT W3C TELEMETRY CARRIER STORAGE FIELD
     trace_context = Column(String, nullable=True)
@@ -81,7 +81,7 @@ def stage_shipping_secured_event(
         # 3. Double-write the event record straight to the transaction log table
         outbox_reply = ShippingOutbox(
             topic="saga_replies",
-            key=str(order_id),
+            partition_key=str(order_id),
             payload=json.dumps(reply_envelope),
             # Save the explicit W3C string context natively on the record
             trace_context=w3c_traceparent_string,

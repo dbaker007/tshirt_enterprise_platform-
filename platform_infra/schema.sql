@@ -25,7 +25,7 @@ CREATE TABLE finance_ledger (
 CREATE TABLE finance_outbox (
 	id SERIAL NOT NULL, 
 	topic VARCHAR NOT NULL, 
-	key VARCHAR NOT NULL, 
+	partition_key VARCHAR NOT NULL, 
 	payload VARCHAR NOT NULL, 
 	trace_context VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
@@ -43,7 +43,7 @@ CREATE TABLE invoices (
 CREATE TABLE notification_outbox (
 	id SERIAL NOT NULL, 
 	topic VARCHAR NOT NULL, 
-	key VARCHAR NOT NULL, 
+	partition_key VARCHAR NOT NULL, 
 	payload VARCHAR NOT NULL, 
 	trace_context VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
@@ -53,8 +53,8 @@ CREATE TABLE notification_outbox (
 CREATE TABLE sales_outbox (
 	id SERIAL NOT NULL, 
 	topic VARCHAR NOT NULL, 
-	key VARCHAR NOT NULL, 
-	payload VARCHAR NOT NULL, 
+	partition_key VARCHAR NOT NULL, 
+	payload TEXT NOT NULL, 
 	trace_context VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
 	PRIMARY KEY (id)
@@ -82,7 +82,7 @@ CREATE TABLE shipping_ledger (
 CREATE TABLE shipping_outbox (
 	id SERIAL NOT NULL, 
 	topic VARCHAR NOT NULL, 
-	key VARCHAR NOT NULL, 
+	partition_key VARCHAR NOT NULL, 
 	payload VARCHAR NOT NULL, 
 	trace_context VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
