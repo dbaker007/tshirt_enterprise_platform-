@@ -21,7 +21,7 @@ class ShippingLedger(Base):
     __tablename__ = "shipping_ledger"
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(String, unique=True, index=True)
-    status = Column(String, index=True)
+    execution_status = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -63,7 +63,9 @@ def stage_shipping_secured_event(
         w3c_traceparent_string = carrier.get("traceparent")
 
         # 1. Update your local ledger state using the explicit ledger_status token
-        new_ledger_entry = ShippingLedger(order_id=str(order_id), status=ledger_status)
+        new_ledger_entry = ShippingLedger(
+            order_id=str(order_id), execution_status=ledger_status
+        )
         db.add(new_ledger_entry)
 
         # 2. Package the unified saga reply payload contract matching the graph arguments

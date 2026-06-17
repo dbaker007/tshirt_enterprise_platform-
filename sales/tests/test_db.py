@@ -1,19 +1,19 @@
-# Import your active production connection parameters and model trackers directly
-from sales.db import DATABASE_URL, Base
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-engine = create_engine(DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from sales.db import Base, SessionLocal
 
 
 def get_clean_test_db_session():
-    """Drops and rebuilds all tables to guarantee complete data isolation
+    """Clears records from the development tables to ensure test isolation
 
-    across parallel test execution sweeps, and returns a clean session.
+    without dropping schemas or disrupting live running background microservices.
     """
-    # Force a complete clean-slate cycle across all tables (including saga_states)
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-    return TestingSessionLocal()
+    db = SessionLocal()
+    try:
+        # Fast, non-destructive row truncation across your active sales tables
+        db.execute(Base.metadata.tables["sales_outbox"].delete())
+        db.execute(Base.metadata.tables["saga_states"].delete())
+        db.execute(Base.metadata.tables["invoices"].delete())
+        db.execute(Base.metadata.tables["customers"].delete())
+        db.commit()
+    except Exception:
+        db.rollback()
+    return db

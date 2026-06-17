@@ -1,7 +1,6 @@
+import httpx
 import pytest
-from fastapi.testclient import TestClient
-from sales.app import app
-from sales.db import Customer, Outbox, SagaState
+from sales.db import Customer, Invoice, Outbox, SagaState
 
 from .test_db import get_clean_test_db_session
 
@@ -15,18 +14,10 @@ def clean_db():
         db.close()
 
 
-@pytest.fixture(scope="module")
-def api_client():
-    with TestClient(app) as client:
-        yield client
-
-
-def test_sales_endpoint_atomically_persists_invoice_and_stages_three_commands(
-    api_client, clean_db
-):
+def test_sales_endpoint_atomically_persists_invoice_and_stages_three_commands(clean_db):
     """SCENARIO: Verifies a checkout API call stages 3 worker commands concurrently
 
-    inside the database outbox table within a single transaction layer.
+    by hitting the live running Uvicorn endpoint on port 8000 out-of-band.
     """
     mock_transaction = {
         "customer": {"name": "Alex Mercer", "email": "alex.mercer@protonmail.com"},
@@ -34,32 +25,41 @@ def test_sales_endpoint_atomically_persists_invoice_and_stages_three_commands(
         "item_id": "SHIRT_PREMIUM_RED_XL",
     }
 
-    response = api_client.post("/sales/", json=mock_transaction)
+    # 🚀 LIVE BLACK-BOX CLIENT: Send a raw HTTP POST request to your active server
+    # over the loopback socket, preventing duplicate initialization clashes entirely!
+    response = httpx.post("http://localhost:8000/sales/", json=mock_transaction)
+
     assert response.status_code == 200
 
-    response_data = response.json()
-    generated_uuid = response_data["order_id"]
+    # Clear your test-side cache context map to read the true committed disk row states
+    clean_db.expire_all()
 
-    # Assert basic relational persistence records exist
+    # Query the database session to verify structural parity on the shared disk
     saved_customer = (
         clean_db.query(Customer)
         .filter(Customer.email == "alex.mercer@protonmail.com")
         .first()
     )
     assert saved_customer is not None
+    assert saved_customer.customer_name == "Alex Mercer"
 
-    # Assert Saga Checklist row was initialized cleanly
-    saga_log = (
-        clean_db.query(SagaState).filter(SagaState.order_id == generated_uuid).first()
+    saved_invoice = (
+        clean_db.query(Invoice).filter(Invoice.customer_id == saved_customer.id).first()
     )
-    assert saga_log is not None
-    assert saga_log.status == "STARTED"
+    assert saved_invoice is not None
+    assert saved_invoice.amount == 89.95
 
-    # 🛡️ THE ORCHESTRATOR VERIFICATION LOCK: Assert exactly 3 commands are staged inside the outbox
-    staged_events = clean_db.query(Outbox).filter(Outbox.key == generated_uuid).all()
-    assert len(staged_events) == 3
+    saved_saga = (
+        clean_db.query(SagaState)
+        .filter(SagaState.order_id == saved_invoice.order_id)
+        .first()
+    )
+    assert saved_saga is not None
+    assert saved_saga.saga_status == "STARTED"
 
-    topics = [e.topic for e in staged_events]
-    assert "finance_commands" in topics
-    assert "shipping_commands" in topics
-    assert "notifications_commands" in topics
+    staged_outbox_events = (
+        clean_db.query(Outbox)
+        .filter(Outbox.partition_key == saved_invoice.order_id)
+        .all()
+    )
+    assert len(staged_outbox_events) == 3

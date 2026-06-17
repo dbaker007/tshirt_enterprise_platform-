@@ -2,14 +2,14 @@ CREATE TABLE communication_ledger (
 	id SERIAL NOT NULL, 
 	order_id VARCHAR, 
 	customer_name VARCHAR, 
-	status VARCHAR, 
+	execution_status VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
 	PRIMARY KEY (id)
 );
 
 CREATE TABLE customers (
 	id SERIAL NOT NULL, 
-	name VARCHAR, 
+	customer_name VARCHAR, 
 	email VARCHAR, 
 	PRIMARY KEY (id)
 );
@@ -17,7 +17,7 @@ CREATE TABLE customers (
 CREATE TABLE finance_ledger (
 	id SERIAL NOT NULL, 
 	order_id VARCHAR, 
-	status VARCHAR, 
+	execution_status VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
 	PRIMARY KEY (id)
 );
@@ -62,7 +62,7 @@ CREATE TABLE sales_outbox (
 
 CREATE TABLE saga_states (
 	order_id VARCHAR NOT NULL, 
-	status VARCHAR NOT NULL, 
+	saga_status VARCHAR NOT NULL, 
 	finance_status VARCHAR, 
 	shipping_status VARCHAR, 
 	notifications_status VARCHAR, 
@@ -74,7 +74,7 @@ CREATE TABLE saga_states (
 CREATE TABLE shipping_ledger (
 	id SERIAL NOT NULL, 
 	order_id VARCHAR, 
-	status VARCHAR, 
+	execution_status VARCHAR, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
 	PRIMARY KEY (id)
 );

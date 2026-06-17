@@ -20,7 +20,7 @@ class FinanceLedger(Base):
     __tablename__ = "finance_ledger"
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(String, unique=True, index=True)
-    status = Column(String, index=True)
+    execution_status = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -55,7 +55,9 @@ def execute_financial_clearance_and_stage_outbox(order_event: dict, status_msg: 
         w3c_traceparent_string = carrier.get("traceparent")
 
         # 1. Update your local ledger state
-        new_ledger_entry = FinanceLedger(order_id=str(order_id), status=status_msg)
+        new_ledger_entry = FinanceLedger(
+            order_id=str(order_id), execution_status=status_msg
+        )
         db.add(new_ledger_entry)
 
         # 2. Package the unified saga reply payload contract

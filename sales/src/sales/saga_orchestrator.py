@@ -92,7 +92,7 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
                 )
                 return
 
-            if state.status in ["COMPLETED", "REJECTED", "IN_TRANSIT"]:
+            if state.saga_status in ["COMPLETED", "REJECTED", "IN_TRANSIT"]:
                 print(
                     f"   └── ⚠️ [ALREADY TERMINAL]: State is already {state.status}. Skipping."
                 )
@@ -116,21 +116,23 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
                 or state.finance_status == "PAYMENT_REJECTED"
                 or state.shipping_status == "FAILED"
             ):
-                state.status = "REJECTED"
+                state.saga_status = "REJECTED"
+                self.issue_compensating_cancellations(
+                    db, order_id, triggering_dept=dept
+                )
+
                 db.commit()
                 print(
                     f"   └── 🚨 [STATE SET]: Hard REJECTED recorded for Order: {order_id}"
                 )
                 return
 
-            # 🛠️ FIXED: Removed the ridiculous multi-string array checks.
-            # Check for the exactly one correct deterministic string output per worker gate.
             if (
                 state.finance_status == "CREDIT_APPROVED"
                 and state.shipping_status == "SHIPMENT_SECURED"
                 and state.notifications_status == "SUCCESS"
             ):
-                state.status = "IN_TRANSIT"
+                state.saga_status = "IN_TRANSIT"
                 print(
                     f"   └── 🚚 [STATE EVOLUTION]: All guards cleared green! Flipped Order {order_id} to IN_TRANSIT."
                 )
@@ -140,7 +142,7 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
 
             db.commit()
             print(
-                f"   └── 💾 [DB COMMIT]: Saved state fields to ledger disk. Status: {state.status} | Fin: {state.finance_status} | Ship: {state.shipping_status} | Notif: {state.notifications_status}"
+                f"   └── 💾 [DB COMMIT]: Saved state fields to ledger disk. Status: {state.saga_status} | Fin: {state.finance_status} | Ship: {state.shipping_status} | Notif: {state.notifications_status}"
             )
 
         except Exception as e:

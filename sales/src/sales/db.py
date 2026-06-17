@@ -23,7 +23,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 class Customer(Base):
     __tablename__ = "customers"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
+    customer_name = Column(String, index=True)
     email = Column(String)
 
 
@@ -50,7 +50,7 @@ class Outbox(Base):
 class SagaState(Base):
     __tablename__ = "saga_states"
     order_id = Column(String, primary_key=True, index=True)
-    status = Column(String, nullable=False)
+    saga_status = Column(String, nullable=False)
     finance_status = Column(String, default="PENDING")
     shipping_status = Column(String, default="PENDING")
     notifications_status = Column(String, default="PENDING")
@@ -75,6 +75,16 @@ def persist_sale_and_stage_outbox(transaction: dict) -> tuple[str, int]:
         w3c_traceparent_string = carrier.get("traceparent")
 
         customer_data = transaction.get("customer", {})
+        print(
+            f"\n🔍 [DB.PY RAW INGESTION]: transaction payload keys: {list(transaction.keys())}"
+        )
+        print(
+            f"🔍 [DB.PY RAW INGESTION]: customer_data sub-dict looks like: {repr(customer_data)}"
+        )
+        print(
+            f"🔍 [DB.PY RAW INGESTION]: customer_data.get('name') evaluates to: {repr(customer_data.get('name'))}"
+        )
+
         new_customer = (
             db.query(Customer)
             .filter(Customer.email == customer_data.get("email"))
@@ -82,7 +92,7 @@ def persist_sale_and_stage_outbox(transaction: dict) -> tuple[str, int]:
         )
         if not new_customer:
             new_customer = Customer(
-                name=customer_data.get("name", "Anonymous Buyer"),
+                customer_name=customer_data.get("name", "Anonymous Buyer"),
                 email=customer_data.get("email", "unknown@enterprise.io"),
             )
             db.add(new_customer)
@@ -98,7 +108,7 @@ def persist_sale_and_stage_outbox(transaction: dict) -> tuple[str, int]:
 
         saga_tracking_log = SagaState(
             order_id=generated_order_id,
-            status="STARTED",
+            saga_status="STARTED",
             finance_status="PENDING",
             shipping_status="PENDING",
             notifications_status="PENDING",
@@ -107,7 +117,7 @@ def persist_sale_and_stage_outbox(transaction: dict) -> tuple[str, int]:
 
         raw_address_info = transaction.get("shipping_address", {})
         avro_compatible_payload = {
-            "customer_name": new_customer.name,
+            "customer_name": new_customer.customer_name,
             "customer_email": new_customer.email,
             "amount": float(new_invoice.amount),
             "item_id": transaction.get("item_id", "SHIRT_STANDARD_BLUE"),

@@ -2,7 +2,7 @@
 # T-SHIRT ENTERPRISE PLATFORM - GLOBAL ORCHESTRATION MANIFEST
 # =========================================================================
 
-.PHONY: bootstrap infra-up infra-down sync-all test-all clean-all status help daemons daemons-stop services services-stop
+.PHONY: bootstrap infra-up infra-down sync-all test-all clean-all status help daemons daemons-stop services services-stop db-status db-outbox db-ledgers kafka-lag kafka-offsets db-trace-audit
 
 help:
 	@echo "🌐 T-Shirt Enterprise Platform Global Control Panel"
@@ -46,8 +46,6 @@ sync-all:
 	uv sync
 
 test-all:
-	$(MAKE) services-stop
-	$(MAKE) daemons-stop
 	@echo "🧪 Executing Unified Global Integration Test Matrix..."
 	@echo "====================================================="
 	uv run pytest sales/ shipping/ finance/ notifications/ -v -s --import-mode=importlib
@@ -120,3 +118,53 @@ all-up:
 	$(MAKE) services
 	$(MAKE) daemons
 	@echo "✔ [SUCCESS]: Distributed mesh fully active. Ready to ingest 'uv run simulate_order.py' payloads!"
+
+# ==============================================================================
+# 🕵️ ENTERPRISE DIAGNOSTIC & OBSERVABILITY SHORCUT MATRIX
+# ==============================================================================
+
+# 1. Real-Time Master Status Aggregate Dashboard
+db-status:
+	@echo "\n📊 [SAGA ENGINE]: Current Master State Distribution..."
+	@echo "====================================================="
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -c \
+		"SELECT saga_status, COUNT(*) FROM saga_states GROUP BY saga_status ORDER BY COUNT(*) DESC;"
+
+# 2. Check the Transient Outbox Table Volumes
+db-outbox:
+	@echo "\n📥 [DATA PIPELINE]: Transient Outbox Table Record Backlogs..."
+	@echo "==========================================================="
+	@echo "Sales Outbox Count:"
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM sales_outbox;" | tr -d ' '
+	@echo "Finance Outbox Count:"
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM finance_outbox;" | tr -d ' '
+	@echo "Shipping Outbox Count:"
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM shipping_outbox;" | tr -d ' '
+	@echo "Notification Outbox Count:"
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM notification_outbox;" | tr -d ' '
+
+# 3. Cross-Department Column Matrix Group-By Audit
+db-ledgers:
+	@echo "\n🔬 [LEDGER AUDIT]: Shifting Microservice Checklist Metrics..."
+	@echo "============================================================="
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -c \
+		"SELECT finance_status, shipping_status, notifications_status, COUNT(*) FROM saga_states WHERE saga_status = 'STARTED' GROUP BY finance_status, shipping_status, notifications_status;"
+
+# 4. View Real-Time Kafka Consumer Group Lag
+kafka-lag:
+	@echo "\n📡 [BROKER NETWORK]: Active Consumer Group lag Matrix..."
+	@echo "======================================================="
+	@docker exec -it enterprise_kafka_broker kafka-consumer-groups --bootstrap-server localhost:9092 --describe --all-groups
+
+# 5. Interrogate Raw Wire Partition Log-End Offsets
+kafka-offsets:
+	@echo "\n📡 [BROKER WIRE]: Current Raw Partition Message Offsets..."
+	@echo "=========================================================="
+	@docker exec -it enterprise_kafka_broker /usr/bin/kafka-run-class kafka.tools.GetOffsetShell --bootstrap-server localhost:9092 --topic saga_replies --time -1
+
+# 6. Audit Trace Context Payloads Passing the Ledger
+db-trace-audit:
+	@echo "\n🔏 [TRACE METRICS]: Last 5 Traceparent Context Signatures on Disk..."
+	@echo "=================================================================="
+	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -c \
+		"SELECT order_id, saga_status, created_at FROM saga_states ORDER BY created_at DESC LIMIT 5;"

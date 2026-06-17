@@ -1,6 +1,4 @@
 import json
-import os
-import uuid
 from datetime import datetime
 
 # 🏆 IMPORT THE UNIVERSAL W3C CONTEXT PROPAGATOR HOOK
@@ -23,7 +21,7 @@ class CommunicationLedger(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(String, index=True)
     customer_name = Column(String)
-    status = Column(String)
+    execution_status = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -65,7 +63,7 @@ def execute_notification_task_and_stage_reply(
             else "DISPATCHED_FRAUD_ALERT"
         )
         new_entry = CommunicationLedger(
-            order_id=order_id, customer_name=customer_name, status=status_msg
+            order_id=order_id, customer_name=customer_name, execution_status=status_msg
         )
         db.add(new_entry)
 
