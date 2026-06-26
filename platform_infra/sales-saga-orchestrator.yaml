@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sales-saga-orchestrator
+  namespace: explorer-zone
+  labels:
+    app: sales-saga-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sales-saga-orchestrator
+  template:
+    metadata:
+      labels:
+        app: sales-saga-orchestrator
+      annotations:
+        # Dynamic timestamp annotation forces K8s to reload fresh local bytes on every run!
+        platform.dev/compiled-at: "DEPLOYMENT_TIMESTAMP"
+    spec:
+      containers:
+      - name: conductor-engine
+        image: tshirt-enterprise-platform/sales-saga-orchestrator:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        # 🟢 FIX: Injects the CoreDNS service handle so the database driver connects smoothly
+        - name: DATABASE_HOST
+          value: "postgres-service"
+        - name: SALES_SAGA_DB_PORT
+          value: "5432"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "enterprise-kafka-broker:9092"
+        - name: PROJECT_ROOT
+          value: "/platform_app"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4318/v1/traces"
+        - name: SCHEMA_REGISTRY_URL
+          value: "http://enterprise-kafka-broker:8081"

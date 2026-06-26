@@ -1,170 +1,371 @@
-# =========================================================================
-# T-SHIRT ENTERPRISE PLATFORM - GLOBAL ORCHESTRATION MANIFEST
-# =========================================================================
-
-.PHONY: bootstrap infra-up infra-down sync-all test-all clean-all status help daemons daemons-stop services services-stop db-status db-outbox db-ledgers kafka-lag kafka-offsets db-trace-audit
-
-help:
-	@echo "🌐 T-Shirt Enterprise Platform Global Control Panel"
-	@echo "=================================================="
-	@echo "make bootstrap    - Zero-friction environment setup (Infra + Sync + Test)"
-	@echo "make infra-up     - Spin up background infrastructure containers"
-	@echo "make infra-down   - Tear down background infrastructure containers and clear volumes"
-	@echo "make sync-all     - Synchronize all package locks across repositories"
-	@echo "make test-all     - Execute the entire integration test matrix across all modules"
-	@echo "make daemons      - Launch all department Outbox Daemons concurrently"
-	@echo "make daemons-stop - Gracefully terminate all active background Outbox Daemons"
-	@echo "make services     - Launch all live API and Consumer application loops concurrently"
-	@echo "make services-stop - Gracefully terminate all active API and Consumer applications"
-	@echo "make clean-all    - Purge cache blueprints and logs everywhere"
-	@echo "make status       - Display active container runtimes and local python processes"
-
-# 🛠️ THE TECH LEAD ZERO-FRICTION BOOTSTRAP GATEWAY
-bootstrap:
-	@echo "🏁 Commencing Global Platform Bootstrapping Sequence..."
-	@echo "====================================================="
-	$(MAKE) infra-up
-	@echo "⏳ Waiting 8 seconds for Kafka and PostgreSQL container clusters to warm up..."
-	@sleep 8
-	@echo "🔧 Compiling and linking workspace department modules via uv..."
-	$(MAKE) sync-all
-	@echo "✔  Shared virtual environment initialized successfully."
-	$(MAKE) test-all
-	@echo "====================================================="
-	@echo "🎉 BOOTSTRAP COMPLETE: Platform is 100% verified and operational."
-
-infra-up:
-	@echo "🚀 Launching centralized platform core utility containers..."
-	cd platform_infra && docker compose up -d
-
-infra-down:
-	@echo "🛑 Tearing down platform core containers and wiping volume allocations..."
-	cd platform_infra && docker compose down -v --remove-orphans
-
-sync-all:
-	@echo "🔧 Synchronizing project dependencies symmetrically via uv..."
-	uv sync
-
-test-all:
-	@echo "🧪 Executing Unified Global Integration Test Matrix..."
-	@echo "====================================================="
-	uv run pytest sales/ shipping/ finance/ notifications/ -v -s --import-mode=importlib
-
-services:
-	@echo "🚀 Spawning Application Graph Consumers with real-time log flushing..."
-	(cd sales/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run uvicorn sales.app:app --host 0.0.0.0 --port 8000 > ../../sales_api.log 2>&1 &)
-	(cd sales/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m sales.saga_orchestrator > ../../sales_orchestrator.log 2>&1 &)
-	(cd shipping/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m shipping.app > ../../shipping_app.log 2>&1 &)
-	(cd finance/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m finance.app > ../../finance_app.log 2>&1 &)
-	(cd notifications/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m notifications.app > ../../notifications_app.log 2>&1 &)
-	@echo "✔ [SUCCESS]: Application consumers safely aligned to execution targets."
-
-daemons:
-	@echo "🚀 Spawning Concrete Outbox Engines with real-time log flushing..."
-	(cd sales/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m sales.outbox_daemon > ../../sales_daemon.log 2>&1 &)
-	(cd shipping/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -m shipping.outbox_daemon > ../../shipping_daemon.log 2>&1 &)
-	(cd finance/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m finance.outbox_daemon > ../../finance_daemon.log 2>&1 &)
-	(cd notifications/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m notifications.outbox_daemon > ../../notifications_daemon.log 2>&1 &)
-	@echo "✔ [SUCCESS]: Shared Outbox Daemons safely spawned."
-
-daemons-stop:
-	@echo "🛑 Intercepting and killing all active background Outbox Daemon processes..."
-	-pkill -f "outbox_daemon"
-	@echo "✔ [SUCCESS]: Outbox streaming loops successfully disengaged."
-
-services-stop:
-	@echo "🛑 Intercepting and killing active application and server runtimes..."
-	-pkill -f "uvicorn"
-	-pkill -f "sales.saga_orchestrator"
-	-pkill -f "shipping.app"
-	-pkill -f "finance.app"
-	-pkill -f "notifications.app"
-	@echo "✔ [SUCCESS]: System services disengaged cleanly."
-
-clean-all:
-	@echo "🧹 Purging local cache footprints and logs..."
-	cd sales && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
-	cd shipping && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
-	cd finance && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
-	cd notifications && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
-	find . -type d -name ".pytest_cache" -exec rm -rf {} +
-	find . -type d -name ".ruff_cache" -exec rm -rf {} +
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	rm -f *.log sales/*.log shipping/*.log finance/*.log notifications/*.log
-
-status:
-	@echo "🔍 Active Container Runtime Memory Footprint:"
-	@docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}"
-	@echo "\n🔍 Active Local Background Python Processes:"
-	@ps aux | grep -E "python|uvicorn" | grep -v grep || echo "No active background python threads detected."
+SHELL := /bin/sh
+.DEFAULT_GOAL := help
 
 # =========================================================================
-# 🏆 MASTER PLATFORM LIFE CYCLE RUNNERS
+# ⚙️ SYSTEM WORKSPACE AUTOMATION COMMANDS
 # =========================================================================
 
-all-down:
-	@echo "🛑 [ALL-DOWN]: Terminating local microservices mesh, background daemons, and storage stacks..."
-	-$(MAKE) services-stop
-	-$(MAKE) daemons-stop
-	-$(MAKE) infra-down
-	@echo "✔ [SUCCESS]: Entire platform hard footprint dismantled cleanly."
+.PHONY: help
+help: ## Display this workspace help matrix map cleanly on your screen
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-all-up:
-	@echo "🚀 [ALL-UP]: Initializing brand-new infrastructure containers..."
-	$(MAKE) infra-up
-	@echo "⏳ [SLEEP ALERT]: Holding thread for 8 seconds to guarantee complete container synchronization..."
-	sleep 8
-	@echo "📡 [ALL-UP]: Launching Application Graph Consumers and Concrete Outbox Daemons concurrently..."
-	$(MAKE) services
-	$(MAKE) daemons
-	@echo "✔ [SUCCESS]: Distributed mesh fully active. Ready to ingest 'uv run simulate_order.py' payloads!"
+# =========================================================================
+# 🎛️ SYSTEM INFRASTRUCTURE BASELINES (Idempotent Namespace Guard)
+# =========================================================================
 
-# ==============================================================================
-# 🕵️ ENTERPRISE DIAGNOSTIC & OBSERVABILITY SHORCUT MATRIX
-# ==============================================================================
+.PHONY: kube-infra-start
+kube-infra-start: kube-namespace-init ## Deploy and initialize complete infrastructure core stack sequentially to prevent discovery collisions
+	@echo "🗄️  1. Provisioning database schema ConfigMaps from local platform_infra assets..."
+	@kubectl create configmap postgres-schema-config --from-file=schema.sql=platform_infra/postgres-schema.sql -n explorer-zone --dry-run=client -o yaml | kubectl apply -f -
 
-# 1. Real-Time Master Status Aggregate Dashboard
-db-status:
-	@echo "\n📊 [SAGA ENGINE]: Current Master State Distribution..."
-	@echo "====================================================="
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -c \
-		"SELECT saga_status, COUNT(*) FROM saga_states GROUP BY saga_status ORDER BY COUNT(*) DESC;"
+	@echo "🐳  2. Pre-caching and side-loading native PostgreSQL image layers directly into containerd..."
+	@docker pull postgres:15-bookworm
+	@docker save postgres:15-bookworm | docker exec -i sandbox-fabric-control-plane ctr --namespace=k8s.io images import -
+	
+	@echo "🐳  3. Pre-caching and side-loading Apache Kafka and Schema Registry image layers directly into containerd..."
+	@docker pull apache/kafka:3.7.0
+	@docker save apache/kafka:3.7.0 | docker exec -i sandbox-fabric-control-plane ctr --namespace=k8s.io images import -
+	@docker pull confluentinc/cp-schema-registry:7.6.0
+	@docker save confluentinc/cp-schema-registry:7.6.0 | docker exec -i sandbox-fabric-control-plane ctr --namespace=k8s.io images import -
+	
+	@echo "🗄️  4. Standing up centralized transactional PostgreSQL Database Shard..."
+	@kubectl apply -f platform_infra/postgres-db.yaml
+	
+	@echo "⏳ Waiting for PostgreSQL PersistentVolumeClaim to bind to host disk..."
+	@kubectl wait --namespace explorer-zone --for=jsonpath='{.status.phase}'=Bound pvc/postgres-storage-claim --timeout=60s
+	
+	@echo "⏳ Waiting for PostgreSQL container storage volumes to mount cleanly..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/postgres-db --timeout=120s
 
-# 2. Check the Transient Outbox Table Volumes
-db-outbox:
-	@echo "\n📥 [DATA PIPELINE]: Transient Outbox Table Record Backlogs..."
-	@echo "==========================================================="
-	@echo "Sales Outbox Count:"
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM sales_outbox;" | tr -d ' '
-	@echo "Finance Outbox Count:"
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM finance_outbox;" | tr -d ' '
-	@echo "Shipping Outbox Count:"
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM shipping_outbox;" | tr -d ' '
-	@echo "Notification Outbox Count:"
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM notification_outbox;" | tr -d ' '
+	@echo "📊 5. Standing up centralized Jaeger Distributed Telemetry Core..."
+	@kubectl apply -f platform_infra/jaeger.yaml
+	@echo "⏳ Waiting for Jaeger collector engine network sockets to initialize..."
+	@kubectl rollout status deployment/jaeger -n explorer-zone --timeout=120s
 
-# 3. Cross-Department Column Matrix Group-By Audit
-db-ledgers:
-	@echo "\n🔬 [LEDGER AUDIT]: Shifting Microservice Checklist Metrics..."
-	@echo "============================================================="
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -c \
-		"SELECT finance_status, shipping_status, notifications_status, COUNT(*) FROM saga_states WHERE saga_status = 'STARTED' GROUP BY finance_status, shipping_status, notifications_status;"
+	@echo "🏁 6. Allowing cluster CoreDNS service discovery networks to stabilize..."
+	@sleep 10
+	
+	@echo "📡 7. Standing up dual-listener KRaft Message Bus and Schema Registry sidecar..."
+	@kubectl apply -f platform_infra/enterprise-kafka-broker.yaml
+	@echo "⏳ Waiting for KRaft broker rollout stream to finalize..."
+	# 🟢 FIX: Replaced the brittle jsonpath wait gate with the bulletproof rollout status tracker! [1.1]
+	@kubectl rollout status deployment/enterprise-kafka-broker -n explorer-zone --timeout=120s
+	
+	@echo "✔ [SUCCESS]: Core platform infrastructure tier is fully operational."
 
-# 4. View Real-Time Kafka Consumer Group Lag
-kafka-lag:
-	@echo "\n📡 [BROKER NETWORK]: Active Consumer Group lag Matrix..."
-	@echo "======================================================="
-	@docker exec -it enterprise_kafka_broker kafka-consumer-groups --bootstrap-server localhost:9092 --describe --all-groups
 
-# 5. Interrogate Raw Wire Partition Log-End Offsets
-kafka-offsets:
-	@echo "\n📡 [BROKER WIRE]: Current Raw Partition Message Offsets..."
-	@echo "=========================================================="
-	@docker exec -it enterprise_kafka_broker /usr/bin/kafka-run-class kafka.tools.GetOffsetShell --bootstrap-server localhost:9092 --topic saga_replies --time -1
+.PHONY: kube-platform-start
+kube-platform-start: kube-cluster-init kube-infra-start ## Provision cluster, initialize core infrastructure, and execute rolling starts for all microservices
+	@echo "🚀 Launching complete cluster application services layer..."
+	@$(MAKE) kube-sales-api-start
+	@$(MAKE) kube-orchestrator-start
+	@$(MAKE) kube-shipping-start
+	@$(MAKE) kube-finance-start
+	@$(MAKE) kube-notifications-start
+	@$(MAKE) kube-outbox-daemon-start
+	@$(MAKE) kube-ports-start
+	@echo "✔ [SUCCESS]: Complete cluster application fabric grid is fully initialized."
 
-# 6. Audit Trace Context Payloads Passing the Ledger
-db-trace-audit:
-	@echo "\n🔏 [TRACE METRICS]: Last 5 Traceparent Context Signatures on Disk..."
-	@echo "=================================================================="
-	@docker exec -it enterprise_postgres_ledger psql -U platform_admin -d platform_shared_ledger -c \
-		"SELECT order_id, saga_status, created_at FROM saga_states ORDER BY created_at DESC LIMIT 5;"
+.PHONY: kube-platform-stop
+kube-platform-stop: ## Forcefully wipe all workloads, background pods, and temporary migration jobs from the cluster namespace
+	@echo "🛑 Flushing all declarative deployment pods and transient jobs from cluster memory..."
+	@kubectl delete deployments,jobs --all -n explorer-zone --force --grace-period=0
+	@echo "✔ [SUCCESS]: Complete cluster workspace canvas has been reset."
+
+# =========================================================================
+# 🐍 LOCAL MAC HOST WORKSPACE MANAGEMENT (uv Execution Track)
+# =========================================================================
+# =========================================================================
+# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
+# =========================================================================
+# =========================================================================
+# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
+# =========================================================================
+
+# =========================================================================
+# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
+# =========================================================================
+
+# =========================================================================
+# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
+# =========================================================================
+
+# =========================================================================
+# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
+# =========================================================================
+
+.PHONY: kube-cluster-init
+kube-cluster-init: ## Provision a fresh, isolated local Kubernetes node instance from raw host hardware
+	@echo "🏗️  Bootstrapping fresh Kind local cluster instance..."
+	@if kind get clusters 2>/dev/null | grep -q "^sandbox-fabric$$"; then \
+		echo "⚠️  Cluster 'sandbox-fabric' already exists on host. Skipping creation pass."; \
+	else \
+		kind create cluster --name sandbox-fabric; \
+		echo "✔  Cluster context successfully bound to host kubeconfig profile."; \
+		echo "⏳ Waiting for Kubernetes API server core layers to initialize..."; \
+		until kubectl get namespace kube-system >/dev/null 2>&1; do sleep 2; done; \
+		echo "⏳ Waiting for internal cluster core storage engine controllers to register..."; \
+		until kubectl get deployment --all-namespaces | grep -q "local-path-provisioner"; do sleep 2; done; \
+		echo "🟢 Patching Kind storage engine to enforce the cluster-wide default storage class..."; \
+		until kubectl get storageclass standard >/dev/null 2>&1 || kubectl get storageclass local-path >/dev/null 2>&1; do sleep 2; done; \
+		if kubectl get storageclass standard >/dev/null 2>&1; then \
+			kubectl patch storageclass standard -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'; \
+		else \
+			kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'; \
+		fi; \
+		echo "✔  Cluster system infrastructure layers are stable and ready for workloads."; \
+	fi
+
+
+
+
+.PHONY: local-platform-start
+local-platform-start: system-init  ## Spawn ALL decoupled background application graph consumers concurrently on your Mac host hardware
+	@echo "🚀 Spawning host application graph consumers with real-time log flushing..."
+	@$(MAKE) local-sales-api-start
+	@$(MAKE) local-orchestrator-start
+	@$(MAKE) local-shipping-start
+	@$(MAKE) local-finance-start
+	@$(MAKE) local-notifications-start
+	@echo "✔ [SUCCESS]: All local host application services safely aligned to execution targets."
+
+.PHONY: local-platform-stop
+local-platform-stop: ## Forcefully terminate all detached background uv/uvicorn processes running on your Mac Mini
+	@echo "🛑 Sweeping detached background host processes from memory..."
+	@pkill -f "uv run" || true
+	@pkill -f "uvicorn" || true
+	@echo "✔ [SUCCESS]: Local host execution canvas reset completed."
+
+# =========================================================================
+# 🔬 CONCRETE WORKLOAD RULES - DOMAIN SPECIFIC TARGETS
+# =========================================================================
+
+# --- DOMAIN: SALES WEB GATEWAY ---
+.PHONY: kube-sales-api-start
+kube-sales-api-start: kube-namespace-init ## Compile, sideload, and execute a self-healing rolling update bounce on cluster Sales FastAPI gateway
+	@echo "📦 Compiling cluster Sales Order Entry image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/sales-order-entry:latest -f platform_infra/sales-order-entry.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/sales-order-entry:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/sales-order-entry.yaml
+	@echo "🚀 Restarting gateway pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/sales-order-entry -n explorer-zone
+	@echo "⏳ Waiting for fresh gateway container sockets to pass readiness gates..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/sales-order-entry --timeout=90s
+	@echo "🔌 Self-Healing: Refreshing background host network port-forward tunnels..."
+	@$(MAKE) kube-ports-start
+	@echo "✔ [SUCCESS]: Sales API gateway is live, updated, and bridged to localhost:8000."
+
+.PHONY: local-sales-api-start
+local-sales-api-start: system-init ## Launch the Sales FastAPI gateway service locally on your Mac Mini host ports
+	@echo "🔌 Starting local Sales Order Entry API Gateway on port 8000..."
+	@PYTHONPATH="sales/src:observability/src" OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
+		uv run uvicorn sales.order_entry.main:app --host 0.0.0.0 --port 8000 > sales_api.log 2>&1 &
+
+# --- DOMAIN: SAGA ORCHESTRATOR ---
+.PHONY: kube-orchestrator-start
+kube-orchestrator-start: kube-namespace-init ## Compile, sideload, and execute a rolling update bounce on cluster Saga Orchestrator engine
+	@echo "📦 Compiling cluster Sales Saga Orchestrator image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/sales-saga-orchestrator:latest -f platform_infra/sales-saga-orchestrator.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/sales-saga-orchestrator:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/sales-saga-orchestrator.yaml
+	@echo "🚀 Restarting orchestrator pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/sales-saga-orchestrator -n explorer-zone
+	@echo "⏳ Waiting for fresh orchestrator container sockets to pass readiness gates..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/sales-saga-orchestrator --timeout=90s
+
+.PHONY: local-orchestrator-start
+local-orchestrator-start: system-init ## Launch the Saga Orchestrator engine process locally on your Mac Mini host hardware
+	@echo "🎛️ Starting local Sales Saga Orchestrator engine..."
+	@PYTHONPATH="sales/src:observability/src" OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
+		uv run python -u -m sales.orchestrator.main > sales_orchestrator.log 2>&1 &
+
+# --- DOMAIN: SHIPPING ---
+.PHONY: kube-shipping-start
+kube-shipping-start: kube-namespace-init ## Compile, sideload, and execute a rolling update bounce on cluster Shipping consumer worker
+	@echo "📦 Compiling cluster Shipping consumer service image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/shipping-service:latest -f platform_infra/shipping-service.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/shipping-service:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/shipping-service.yaml
+	@echo "🚀 Restarting shipping consumer pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/shipping-service -n explorer-zone
+	@echo "⏳ Waiting for fresh shipping consumer container sockets to initialize..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/shipping-service --timeout=90s
+	@echo "✔ [SUCCESS]: Shipping consumer application worker is live inside the cluster."
+
+.PHONY: local-shipping-start
+local-shipping-start: system-init ## Launch the Shipping fulfillment microservice locally on your Mac Mini host hardware
+	@echo "🚚 Starting local Shipping Consumer Worker..."
+	@PYTHONPATH="shipping/src:observability/src" OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
+		uv run python -u -m shipping.app > shipping_app.log 2>&1 &
+
+# --- DOMAIN: FINANCE ---
+.PHONY: local-finance-start
+local-finance-start: system-init ## Launch the Finance accounting microservice locally on your Mac Mini host hardware
+	@echo "💰 Starting local Finance Consumer Worker..."
+	@PYTHONPATH="finance/src:observability/src" OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
+		uv run python -u -m finance.app > finance_app.log 2>&1 &
+
+# --- DOMAIN: NOTIFICATIONS ---
+.PHONY: local-notifications-start
+local-notifications-start: system-init ## Launch the Notifications consumer microservice locally on your Mac Mini host hardware
+	@echo "🔔 Starting local Notifications Consumer Worker..."
+	@PYTHONPATH="notifications/src:observability/src" OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
+		uv run python -u -m notifications.app > notifications_app.log 2>&1 &
+
+# =========================================================================
+# 🛠️ INTERNAL CLUSTER SUBSYSTEMS (Private targets wrapped by kube-infra-start)
+# =========================================================================
+
+.PHONY: kube-db-start
+kube-db-start: kube-namespace-init
+	@kubectl create configmap postgres-schema-config --from-file=schema.sql=platform_infra/postgres-schema.sql -n explorer-zone --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl apply -f platform_infra/postgres-db.yaml
+	@kubectl rollout restart deployment/postgres-db -n explorer-zone
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/postgres-db --timeout=90s
+	@kubectl delete job platform-schema-migrator -n explorer-zone --ignore-not-found=true
+	@kubectl apply -f platform_infra/postgres-migrator-job.yaml
+
+.PHONY: kube-kafka-start
+kube-kafka-start: kube-namespace-init
+	@kubectl apply -f platform_infra/enterprise-kafka-broker.yaml
+	@kubectl rollout restart deployment/enterprise-kafka-broker -n explorer-zone
+	@kubectl wait --namespace explorer-zone --for=condition=ready pod -l app=enterprise-kafka-broker --timeout=90s
+
+.PHONY: kube-jaeger-start
+kube-jaeger-start: kube-namespace-init
+	@kubectl apply -f platform_infra/jaeger.yaml
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/jaeger --timeout=90s
+
+.PHONY: kube-outbox-daemon-start
+kube-outbox-daemon-start: kube-namespace-init ## Compile, sideload, and execute a rolling update bounce on cluster Outbox Daemon
+	@echo "🗄️ Compiling cluster Universal Outbox Daemon service image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/outbox-daemon:latest -f platform_infra/outbox-daemon.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/outbox-daemon:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/outbox-daemon.yaml
+	@echo "🚀 Restarting outbox daemon pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/outbox-daemon -n explorer-zone
+	@echo "⏳ Waiting for fresh outbox daemon container sockets to initialize..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/outbox-daemon --timeout=90s
+	@echo "✔ [SUCCESS]: Universal Outbox Daemon is live inside the cluster."
+
+.PHONY: kube-ports-start
+kube-ports-start: kube-namespace-init ## Launch all background network ingress tunnels intelligently, verifying active pods are ready
+	@./scripts/kube-ports.sh start
+
+.PHONY: kube-ports-stop
+kube-ports-stop: kube-namespace-init ## Forcefully evict and terminate all active background port-forwarding tunnels from Mac memory
+	@./scripts/kube-ports.sh stop
+
+.PHONY: system-status
+system-status: ## Interrogate and render real-time mixed runtime matrix status grids (Kube vs Local Host)
+	@./scripts/system-status.sh
+
+.PHONY: system-init
+system-init: ## Private target ensuring cluster namespace partition and host local network loops are aligned
+	@kubectl create namespace explorer-zone --dry-run=client -o yaml | kubectl apply -f -
+	@if ! grep -q "enterprise-kafka-broker" /etc/hosts; then \
+		echo "🌐 Host Routing Patch Required. Injecting local cluster broker alias mapping to your /etc/hosts file..."; \
+		sudo sh -c "echo '127.0.0.1 enterprise-kafka-broker' >> /etc/hosts"; \
+	fi
+
+# --- DOMAIN: SALES WEB GATEWAY ---
+.PHONY: local-sales-api-stop
+local-sales-api-stop: ## Forcefully terminate ONLY the local host Sales API process
+	@echo "🛑 Stopping local Sales Order Entry API Gateway..."
+	@pkill -9 -f "sales.order_entry.main:app" || true
+
+# --- DOMAIN: SAGA ORCHESTRATOR ---
+.PHONY: local-orchestrator-stop
+local-orchestrator-stop: ## Forcefully terminate ONLY the local host Saga Orchestrator process
+	@echo "🛑 Stopping local Sales Saga Orchestrator engine..."
+	@pkill -9 -f "sales.orchestrator.main" || true
+
+# --- DOMAIN: SHIPPING ---
+.PHONY: local-shipping-stop
+local-shipping-stop: ## Forcefully terminate ONLY the local host Shipping worker process
+	@echo "🛑 Stopping local Shipping Consumer Worker..."
+	@pkill -9 -f "shipping.app" || true
+
+# --- DOMAIN: FINANCE ---
+.PHONY: local-finance-stop
+local-finance-stop: ## Forcefully terminate ONLY the local host Finance worker process
+	@echo "🛑 Stopping local Finance Consumer Worker..."
+	@pkill -9 -f "finance.app" || true
+
+# --- DOMAIN: NOTIFICATIONS ---
+.PHONY: local-notifications-stop
+local-notifications-stop: ## Forcefully terminate ONLY the local host Notifications worker process
+	@echo "🛑 Stopping local Notifications Consumer Worker..."
+	@pkill -9 -f "notifications.app" || true
+
+# --- DOMAIN: FINANCE ---
+.PHONY: kube-finance-start
+kube-finance-start: system-init ## Compile, sideload, and execute a rolling update bounce on cluster Finance consumer worker
+	@echo "💰 Compiling cluster Finance consumer service image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/finance-service:latest -f platform_infra/finance-service.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/finance-service:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/finance-service.yaml
+	@echo "🚀 Restarting finance consumer pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/finance-service -n explorer-zone
+	@echo "⏳ Waiting for fresh finance consumer container sockets to initialize..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/finance-service --timeout=90s
+	@echo "✔ [SUCCESS]: Finance consumer application worker is live inside the cluster."
+
+.PHONY: kube-notifications-start
+kube-notifications-start: system-init ## Compile, sideload, and execute a rolling update bounce on cluster Notifications consumer worker
+	@echo "🔔 Compiling cluster Notifications consumer service image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/notifications-service:latest -f platform_infra/notifications-service.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/notifications-service:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/notifications-service.yaml
+	@echo "🚀 Restarting notifications consumer pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/notifications-service -n explorer-zone
+	@echo "⏳ Waiting for fresh notifications consumer container sockets to initialize..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/notifications-service --timeout=90s
+	@echo "✔ [SUCCESS]: Notifications consumer application worker is live inside the cluster."
+
+# =========================================================================
+# 🧪 PLATFORM TESTING TRACKS (Cross-Domain Test Matrix Verification)
+# =========================================================================
+
+.PHONY: test-all
+test-all: ## Execute all microservice unit tests sequentially and fail-fast if any single test drops out
+	@echo "🧪 [TEST MATRIX]: Initiating full platform verification sweeps..."
+	@echo "🔍 0. Executing static code compilation analysis across all packages..."
+	@uv run python -c "import compileall, sys; sys.exit(0 if all([compileall.compile_dir(d, quiet=1) for d in ['finance', 'shipping', 'notifications', 'sales', 'outbox_daemon', 'observability']]) else 1)" || (echo "❌ [COMPILE ERROR]: Syntax or import violations detected in your codebase!" && exit 1)
+	@echo "✔  [SUCCESS]: Static compilation analysis cleared clean."
+	@FAILED=0; \
+	echo "--------------------------------------------------------------------------------="; \
+	echo "🛍️  1. Running Sales Domain Test Matrix..."; \
+	(cd sales && uv run pytest) || FAILED=1; \
+	echo "--------------------------------------------------------------------------------="; \
+	echo "💰 2. Running Finance Domain Test Matrix..."; \
+	(cd finance && uv run pytest) || FAILED=1; \
+	echo "--------------------------------------------------------------------------------="; \
+	echo "🚚 3. Running Shipping Domain Test Matrix..."; \
+	(cd shipping && uv run pytest) || FAILED=1; \
+	echo "--------------------------------------------------------------------------------="; \
+	echo "🔔 4. Running Notifications Domain Test Matrix..."; \
+	(cd notifications && uv run pytest) || FAILED=1; \
+	echo "--------------------------------------------------------------------------------="; \
+	echo "🗄️  5. Running Observability Shared Library Test Matrix..."; \
+	(uv run pytest observability/tests/) || FAILED=1; \
+	echo "--------------------------------------------------------------------------------="; \
+	echo "📤 6. Running Universal Outbox Daemon Test Matrix..."; \
+	(cd outbox_daemon && uv run pytest) || FAILED=1; \
+	echo "================================================================================="; \
+	if [ $$FAILED -ne 0 ]; then \
+		echo "❌ [FAILURE]: One or more test suites failed verification. Aborting build matrix."; \
+		exit 1; \
+	fi; \
+	echo "✔ [SUCCESS]: Complete platform testing matrix passed verification checks!"
+
+
+.PHONY: kube-namespace-init
+kube-namespace-init: kube-cluster-init ## Provision and isolate the core platform partition zone inside the cluster
+	@echo "🛡️  Initializing isolated cluster logical partition namespace..."
+	@if ! kubectl get namespace explorer-zone >/dev/null 2>&1; then \
+		kubectl create namespace explorer-zone; \
+		echo "✔  Namespace 'explorer-zone' successfully established."; \
+	else \
+		echo "⚠️  Namespace 'explorer-zone' already initialized. Skipping creation block."; \
+	fi

@@ -1,17 +1,22 @@
-import json
+import os
 from datetime import datetime
 
-# 🏆 IMPORT THE UNIVERSAL W3C CONTEXT PROPAGATOR HOOK
-from opentelemetry import propagate
+from observability.db import get_platform_database_url
+from observability.outbox import stage_outbox_message
 from sqlalchemy import Column, DateTime, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+# 🟢 IMPORT THE NATIVE POSTGRESQL INSERT UTILITY [1.1]
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 class Base(DeclarativeBase):
     pass
 
 
-DATABASE_URL = "postgresql://platform_admin:admin_secure_password@localhost:5432/platform_shared_ledger"
+LOCAL_PORT = os.environ.get("FINANCE_DB_PORT", "5432")
+DATABASE_URL = get_platform_database_url(port=LOCAL_PORT)
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -24,65 +29,48 @@ class FinanceLedger(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class FinanceOutbox(Base):
-    """The transactional outbox table carrying the explicit W3C trace string context for replies."""
-
-    __tablename__ = "finance_outbox"
-    id = Column(Integer, primary_key=True, index=True)
-    topic = Column(String, nullable=False)
-    partition_key = Column(String, nullable=False)
-    payload = Column(String, nullable=False)
-    # 🛠️ THE EXACT W3C TELEMETRY CARRIER STORAGE FIELD
-    trace_context = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
 def init_finance_db():
     Base.metadata.create_all(bind=engine)
 
 
-def execute_financial_clearance_and_stage_outbox(order_event: dict, status_msg: str):
-    """Executes atomic ledger persistence and dual-writes a tracking outbox reply with OTel metadata."""
-    db = SessionLocal()
-    order_id = order_event.get("order_id")
+def persist_financial_ledger_record(
+    db: Session, order_id: str, ledger_status: str
+) -> None:
+    """Stateless data access worker.
 
-    try:
-        # 🏆 EXPLICIT STATE CAPTURE PATTERN:
-        # Pull the active W3C trace metadata out of the current execution thread,
-        # serialize it to a clean string format, and store it in our outbox table.
-        carrier = {}
-        propagate.inject(carrier)
-        w3c_traceparent_string = carrier.get("traceparent")
+    Compiles and executes a native PostgreSQL atomic UPSERT statement on the server. [1.1]
+    """
+    # 🟢 FIX: Uses native Postgres atomic UPSERT to safely overwrite status counters on key collisions [1.1]
+    stmt = insert(FinanceLedger).values(
+        order_id=str(order_id), execution_status=str(ledger_status)
+    )
 
-        # 1. Update your local ledger state
-        new_ledger_entry = FinanceLedger(
-            order_id=str(order_id), execution_status=status_msg
-        )
-        db.add(new_ledger_entry)
+    upsert_stmt = stmt.on_conflict_do_update(
+        index_elements=[FinanceLedger.order_id],
+        set_=dict(execution_status=str(ledger_status)),
+    )
 
-        # 2. Package the unified saga reply payload contract
-        # 🏆 FIXED: Explicitly provide mandatory contract schema variables natively!
-        reply_envelope = {
-            "order_id": str(order_id),
-            "department": "FINANCE",
-            "status": status_msg,
-            "reason": f"Financial clearance status evaluated as: {status_msg}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
+    db.execute(upsert_stmt)
 
-        # 3. Double-write the event record straight to the transaction log table
-        outbox_reply = FinanceOutbox(
-            topic="saga_replies",
-            partition_key=str(order_id),
-            payload=json.dumps(reply_envelope),
-            # Save the explicit W3C string context natively on the record
-            trace_context=w3c_traceparent_string,
-        )
-        db.add(outbox_reply)
-        db.commit()
 
-    except Exception as e:
-        db.rollback()
-        raise e
-    finally:
-        db.close()
+def stage_finance_saga_reply(
+    db: Session, order_id: str, wire_status: str, ledger_status: str
+) -> None:
+    """Stateless data access worker.
+
+    Packages the standardized saga contract and routes it into the central platform outbox.
+    """
+    reply_envelope = {
+        "order_id": str(order_id),
+        "department": "FINANCE",
+        "status": str(wire_status),
+        "reason": f"Financial clearance status evaluated as: {ledger_status}",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+    stage_outbox_message(
+        db=db,
+        topic="saga_replies",
+        partition_key=str(order_id),
+        payload=reply_envelope,
+    )

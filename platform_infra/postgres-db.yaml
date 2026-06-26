@@ -1,0 +1,73 @@
+# =========================================================================
+# 🗄️ 1. THE HARDWARE STORAGE CLAIM TICKET (PersistentVolumeClaim)
+# =========================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-storage-claim
+  namespace: explorer-zone
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# =========================================================================
+# 🏗️ 2. THE PROCESS CONFIGURATION ENGINE (Deployment)
+# =========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-db
+  namespace: explorer-zone
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-ledger
+  template:
+    metadata:
+      labels:
+        app: postgres-ledger
+    spec:
+      volumes:
+      - name: postgres-data-volume
+        persistentVolumeClaim:
+          claimName: postgres-storage-claim
+      containers:
+      - name: postgres-db
+        image: postgres:15-bookworm
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: "platform_admin"
+        - name: POSTGRES_PASSWORD
+          value: "admin_secure_password"
+        - name: POSTGRES_DB
+          value: "platform_shared_ledger"
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts:
+        - name: postgres-data-volume
+          mountPath: /var/lib/postgresql/data/
+
+---
+# =========================================================================
+# 📡 3. THE PERMANENT NETWORK INGRESS ROUTER (Service)
+# =========================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: explorer-zone
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres-ledger
+  ports:
+  - port: 5432
+    targetPort: 5432

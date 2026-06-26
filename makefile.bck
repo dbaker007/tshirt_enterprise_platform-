@@ -1,0 +1,291 @@
+# =========================================================================
+# T-SHIRT ENTERPRISE PLATFORM - GLOBAL ORCHESTRATION MANIFEST
+# =========================================================================
+
+.PHONY: bootstrap infra-up infra-down sync-all test-all clean-all status help \
+        daemons daemons-stop services services-stop \
+        db-status db-outbox db-ledgers kafka-lag kafka-offsets db-trace-audit \
+        database-up database-down database-logs local-start simulate-order simulate-load
+
+help: ## Display this dynamically generated menu matrix of active targets [1.1]
+	@echo "🌐 T-Shirt Enterprise Platform Global Control Panel"
+	@echo "=================================================="
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# 🛠️ THE TECH LEAD ZERO-FRICTION BOOTSTRAP GATEWAY
+bootstrap:
+	@echo "🏁 Commencing Global Platform Bootstrapping Sequence..."
+	@echo "====================================================="
+	$(MAKE) infra-up
+	@echo "⏳ Waiting 8 seconds for Kafka container clusters to warm up..."
+	@sleep 8
+	@echo "🔧 Compiling and linking workspace department modules via uv..."
+	$(MAKE) sync-all
+	@echo "✔  Shared virtual environment initialized successfully."
+	$(MAKE) test-all
+	@echo "====================================================="
+	@echo "🎉 BOOTSTRAP COMPLETE: Platform is 100% verified and operational."
+
+infra-up:
+	@echo "🚀 Launching centralized platform core utility containers..."
+	cd platform_infra && docker compose up -d
+
+infra-down:
+	@echo "🛑 Tearing down platform core containers and wiping volume allocations..."
+	cd platform_infra && docker compose down -v --remove-orphans
+
+sync-all:
+	@echo "🔧 Synchronizing project dependencies symmetrically via uv..."
+	uv sync
+
+test-all:
+	@echo "🧪 Executing Unified Global Integration Test Matrix..."
+	@echo "====================================================="
+	uv run pytest sales/ shipping/ finance/ notifications/ -v -s --import-mode=importlib
+
+services:
+	@echo "🚀 Spawning Application Graph Consumers with real-time log flushing..."
+	(cd sales/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run uvicorn sales.app:app --host 0.0.0.0 --port 8000 > ../../sales_api.log 2>&1 &)
+	(cd shipping/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m shipping.app > ../../shipping_app.log 2>&1 &)
+	(cd finance/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m finance.app > ../../finance_app.log 2>&1 &)
+	(cd notifications/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m notifications.app > ../../notifications_app.log 2>&1 &)
+	@echo "✔ [SUCCESS]: Application consumers safely aligned to execution targets."
+
+daemons:
+	@echo "🚀 Spawning Concrete Outbox Engines with real-time log flushing..."
+	(cd sales/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m sales.outbox_daemon > ../../sales_daemon.log 2>&1 &)
+	(cd shipping/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -m shipping.outbox_daemon > ../../shipping_daemon.log 2>&1 &)
+	(cd finance/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m finance.outbox_daemon > ../../finance_daemon.log 2>&1 &)
+	(cd notifications/src && OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 uv run python -u -m notifications.outbox_daemon > ../../notifications_daemon.log 2>&1 &)
+	@echo "✔ [SUCCESS]: Shared Outbox Daemons safely spawned."
+
+daemons-stop:
+	@echo "🛑 Intercepting and killing all active background Outbox Daemon processes..."
+	-pkill -f "outbox_daemon"
+	@echo "✔ [SUCCESS]: Outbox streaming loops successfully disengaged."
+
+services-stop:
+	@echo "🛑 Intercepting and killing active application and server runtimes..."
+	-pkill -f "uvicorn"
+	-pkill -f "sales.saga_orchestrator"
+	-pkill -f "shipping.app"
+	-pkill -f "finance.app"
+	-pkill -f "notifications.app"
+	@echo "✔ [SUCCESS]: System services disengaged cleanly."
+
+clean-all:
+	@echo "🧹 Purging local cache footprints and logs..."
+	cd sales && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
+	cd shipping && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
+	cd finance && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
+	cd notifications && rm -rf .pytest_cache .pydantic_cache .ruff_cache build dist *.egg-info
+	find . -type d -name ".pytest_cache" -exec rm -rf {} +
+	find . -type d -name ".ruff_cache" -exec rm -rf {} +
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	rm -f *.log sales/*.log shipping/*.log finance/*.log notifications/*.log
+
+status:
+	@echo "🔍 Active Container Runtime Memory Footprint:"
+	@docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}"
+	@echo "\n🔍 Active Local Background Python Processes:"
+	@ps aux | grep -E "python|uvicorn" | grep -v grep || echo "No active background python threads detected."
+
+# =========================================================================
+# ⚙️ ENTERPRISE PLATFORM INFRASTRUCTURE LAUNCH CONTROLS (KUBERNETES LAYER)
+# =========================================================================
+
+# 🚀 1. Spin up your database ledger cleanly under the IaC pattern
+database-up:
+	@echo "🐣 Injecting Production Data Schema and Launching Postgres Ledger..."
+	kubectl apply -f platform_infra/postgres-ledger.yaml
+
+# 🧹 2. Wipes ONLY the deployment container out of active memory RAM (Disk volume stays untouched)
+database-down:
+	@echo "Stopping database container process... (Data disk stays safe on drive)"
+	kubectl delete deployment postgres-db -n explorer-zone
+
+# 🔎 3. Instantly stream live database logs to your screen
+database-logs: ## do a thing
+	@echo "🛰️ Attaching log trail pipe to active Postgres instance..."
+	kubectl logs -n explorer-zone -l app=postgres-ledger -f
+
+# ==============================================================================
+# 🕵️ ENTERPRISE DIAGNOSTIC & OBSERVABILITY SHORTCUT MATRIX
+# ==============================================================================
+
+# 📊 1. Aggregate current top-level Saga transaction states
+db-status:
+	@echo "\n📊 [SAGA ENGINE]: Current Master State Distribution..."
+	@echo "====================================================="
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items[0].metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -c \
+		"SELECT saga_status, COUNT(*) FROM saga_states GROUP BY saga_status ORDER BY COUNT(*) DESC;"
+
+# 📥 2. Monitor your transactional outbox queues for data backlogs
+db-outbox:
+	@echo "\n📥 [DATA PIPELINE]: Transient Outbox Table Record Backlogs..."
+	@echo "==========================================================="
+	@echo -n "Sales Outbox Count: "
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items[0].metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM sales_outbox;" | tr -d '[:space:]'
+	@echo ""
+	@echo -n "Finance Outbox Count: "
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items[0].metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM finance_outbox;" | tr -d '[:space:]'
+	@echo ""
+	@echo -n "Shipping Outbox Count: "
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items[0].metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM shipping_outbox;" | tr -d '[:space:]'
+	@echo ""
+	@echo -n "Notification Outbox Count: "
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items[0].metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -t -c "SELECT COUNT(*) FROM notification_outbox;" | tr -d '[:space:]'
+	@echo ""
+
+# 🔬 3. Cross-reference multi-department distributed execution matrices
+db-ledgers:
+	@echo "\n🔬 [LEDGER AUDIT]: Shifting Microservice Checklist Metrics..."
+	@echo "============================================================="
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items[0].metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -c \
+		"SELECT finance_status, shipping_status, notifications_status, COUNT(*) FROM saga_states WHERE saga_status = 'STARTED' GROUP BY finance_status, shipping_status, notifications_status;"
+
+# 4. View Real-Time Kafka Consumer Group Lag
+# 4. View Real-Time Kafka Consumer Group Lag
+kafka-lag:
+	@echo "\n📡 [BROKER NETWORK]: Active Consumer Group lag Matrix..."
+	@echo "======================================================="
+	@docker exec -it enterprise_kafka_broker kafka-consumer-groups --bootstrap-server localhost:9092 --describe --all-groups
+
+# 5. Interrogate Raw Wire Partition Log-End Offsets
+kafka-offsets:
+	@echo "\n📡 [BROKER WIRE]: Current Raw Partition Message Offsets..."
+	@echo "=========================================================="
+	@docker exec -it enterprise_kafka_broker /usr/bin/kafka-run-class kafka.tools.GetOffsetShell --bootstrap-server localhost:9092 --topic saga_replies --time -1
+
+# 6. Audit Trace Context Payloads Passing the Ledger
+db-trace-audit:
+	@echo "\n🔏 [TRACE METRICS]: Last 5 Traceparent Context Signatures on Disk..."
+	@echo "=================================================================="
+	@kubectl exec -n explorer-zone $$(kubectl get pods -n explorer-zone -l app=postgres-ledger -o jsonpath='{.items.metadata.name}') -- psql -U platform_admin -d platform_shared_ledger -c \
+		"SELECT order_id, saga_status, created_at FROM saga_states ORDER BY created_at DESC LIMIT 5;"
+
+# =========================================================================
+# 🧪 PLATFORM SIMULATION RUNNERS (FOREGROUND RE-ALIGNED)
+# =========================================================================
+
+local-start:
+	@echo "🐍 Launching local python sales engine application..."
+	python3 sales_app/main.py
+
+# 🛒 1. Order Simulation Pipeline (Assumes manual port-forward 5432)
+simulate-order:
+	@echo "Executing foreground order simulation script..."
+	uv run python3 tests/simulate_order.py
+
+# 📊 2. System Load Simulation Pipeline (Assumes manual port-forward 5432)
+simulate-load:
+	@echo "Executing foreground load simulation script..."
+	uv run python3 tests/simulate_load.py
+
+all-down:
+	@echo "🛑 [ALL-DOWN]: Terminating local microservices mesh, background daemons, and storage stacks..."
+	-$(MAKE) services-stop
+	-$(MAKE) daemons-stop
+	-$(MAKE) infra-down
+	@echo "✔ [SUCCESS]: Entire platform hard footprint dismantled cleanly."
+
+all-up:
+	@echo "🚀 [ALL-UP]: Initializing brand-new infrastructure containers..."
+	$(MAKE) infra-up
+	@echo "⏳ [SLEEP ALERT]: Holding thread for 8 seconds to guarantee complete container synchronization..."
+	sleep 8
+	@echo "📡 [ALL-UP]: Launching Application Graph Consumers and Concrete Outbox Daemons concurrently..."
+	$(MAKE) services
+	$(MAKE) daemons
+	@echo "✔ [SUCCESS]: Distributed mesh fully active."
+
+order-entry-local: ## Launch local FastAPI app with an automated self-healing cluster hijack [1.1]
+	@echo "📡 Interrogating cluster state... Capturing active replica footprint..."
+	$(eval CURRENT_REPLICAS=$(shell kubectl get deployment sales-order-entry -n explorer-zone -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1"))
+	@echo "🔒 Captured state: [$(CURRENT_REPLICAS)] replicas currently active in cluster."
+	@echo "🛑 Temporarily pausing cluster instances to prevent traffic contention..."
+	kubectl scale deployment sales-order-entry --replicas=0 -n explorer-zone
+	@echo "🚀 Initializing local execution loop context..."
+	@trap 'echo "\n🧹 Catching termination signal... Restoring cluster replica baseline [$(CURRENT_REPLICAS)]..."; kubectl scale deployment sales-order-entry --replicas=$(CURRENT_REPLICAS) -n explorer-zone; echo "✔ Cluster state self-healed successfully."' EXIT; \
+	kubectl port-forward svc/postgres-service 15432:5432 -n explorer-zone & \
+	sleep 2; \
+	echo "📡 Secure data tunnel active on local port 15432. Launching FastAPI tier..."; \
+	SALES_API_DB_PORT=15432 uv run uvicorn sales.src.sales.order_entry.main:app --host 0.0.0.0 --port 8000
+
+sales-order-entry-deploy: ## Compile, sideload, and dynamically deploy the FastAPI web gateway tier
+	@echo "📦 1. Compiling Sales Order Entry image from centralized blueprint..."
+	docker build --no-cache -t tshirt-enterprise-platform/sales-order-entry:latest -f platform_infra/sales-order-entry.Dockerfile .
+	@echo "📡 2. Sideloading Order Entry image across the virtualization wall into kind memory..."
+	kind load docker-image tshirt-enterprise-platform/sales-order-entry:latest --name sandbox-fabric
+	@echo "🚀 3. Executing clean rolling update restart..."
+	@kubectl apply -f platform_infra/sales-order-entry.yaml
+	kubectl rollout restart deployment/sales-order-entry -n explorer-zone
+	@echo "✔ [SUCCESS]: Sales Order Entry web gateway has reloaded with your latest code changes."
+
+sales-orchestrator-deploy: observability/src/observability/framework/base.py ## Compile, sideload, and dynamically deploy the Saga Orchestrator
+	@echo "📦 1. Compiling Sales Saga Orchestrator image from centralized blueprint..."
+	docker build --no-cache -t tshirt-enterprise-platform/sales-saga-orchestrator:latest -f platform_infra/sales-saga-orchestrator.Dockerfile .
+	@echo "📡 2. Sideloading Orchestrator image across the virtualization wall into kind memory..."
+	kind load docker-image tshirt-enterprise-platform/sales-saga-orchestrator:latest --name sandbox-fabric
+	@echo "🚀 3. Executing clean rolling update restart..."
+	@kubectl apply -f platform_infra/sales-saga-orchestrator.yaml
+	kubectl rollout restart deployment/sales-saga-orchestrator -n explorer-zone
+	@echo "✔ [SUCCESS]: Sales Saga Orchestrator has reloaded with your latest code changes."
+
+kafka-up: ## Deploy and rolling-bounce the self-contained KRaft Kafka Broker directly on the cluster nodes
+	@echo "📦 1. Declaratively applying enterprise-kafka-broker infrastructure contracts..."
+	@kubectl apply -f platform_infra/enterprise-kafka-broker.yaml
+	@echo "🚀 2. Executing clean rolling update bounce to spin up dual-listener topology..."
+	@kubectl rollout restart deployment/enterprise-kafka-broker -n explorer-zone
+	@echo "⏳ 3. Waiting for Kafka streaming engine pod containers to stabilize in active RAM..."
+	@kubectl wait --namespace explorer-zone --for=condition=ready pod -l app=enterprise-kafka-broker --timeout=90s
+	@echo "✔ [SUCCESS]: Cloud-native message bus is live and handling both internal mesh and external host requests."
+
+outbox-daemon-deploy:  ## Compile, sideload, and deploy the universal outbox background daemon flusher [1.1]
+	@echo "📦 1. Compiling Universal Outbox Daemon background image..."
+	docker build --no-cache -t tshirt-enterprise-platform/outbox-daemon:latest -f platform_infra/outbox-daemon.Dockerfile .
+	@echo "📡 2. Sideloading Universal Daemon image into local kind node memory..."
+	kind load docker-image tshirt-enterprise-platform/outbox-daemon:latest --name sandbox-fabric
+	@echo "🚀 3. Executing clean rolling update restart..."
+	@kubectl apply -f platform_infra/outbox-daemon.yaml
+	kubectl rollout restart deployment/outbox-daemon -n explorer-zone
+	@echo "✔ [SUCCESS]: Universal Outbox Daemon background worker has launched inside the cluster."
+
+jaeger-up: ## Deploy the central Jaeger All-In-One visualizer [1.1]
+	@echo "📡 Standing up central OpenTelemetry tracing collector..."
+	kubectl apply -f platform_infra/jaeger.yaml
+
+shipping-daemon-deploy: observability/src/observability/framework/base.py ## Compile, sideload, and deploy the isolated shipping background outbox flusher
+	@echo "📦 1. Compiling Shipping Outbox Daemon background image..."
+	docker build --no-cache -t tshirt-enterprise-platform/shipping-outbox-daemon:latest -f platform_infra/shipping-outbox-daemon.Dockerfile .
+	@echo "📡 2. Sideloading Daemon image into local kind node memory..."
+	kind load docker-image tshirt-enterprise-platform/shipping-outbox-daemon:latest --name sandbox-fabric
+	@echo "🚀 3. Executing clean rolling update restart..."
+	@kubectl apply -f platform_infra/shipping-outbox-daemon.yaml
+	kubectl rollout restart deployment/shipping-outbox-daemon -n explorer-zone
+	@echo "✔ [SUCCESS]: Shipping Outbox Daemon background worker has launched inside the cluster."
+
+kafka-topics-list: ## Interrogate the live cluster broker storage layers and list all active topic queues
+	@echo "📡 Interrogating live cluster broker storage layers..."
+	@kubectl exec -n explorer-zone deployment/enterprise-kafka-broker -c kafka-engine -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+kafka-topics-length: ## Interrogate the live cluster broker and print the current length/message counts of your topics
+	@echo "📡 Counting active message footprints across cluster topic queues..."
+	@for topic in $$(kubectl exec -n explorer-zone deployment/enterprise-kafka-broker -c kafka-engine -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list | grep -v -E "^(__consumer_offsets|_schemas)$$" 2>/dev/null); do \
+		count=$$(kubectl exec -n explorer-zone deployment/enterprise-kafka-broker -c kafka-engine -- /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic $$topic | awk -F ":" '{sum += $$3} END {print (sum == "" ? 0 : sum)}'); \
+		echo "📊 Topic: [$$topic] ──► Length/Messages: [ $$count ]"; \
+	done
+
+db-deploy: ## Compile your standalone SQL script and execute a rolling database update
+	@echo "📦 1. Compiling external SQL schema file straight into cluster storage registers..."
+	@kubectl create configmap postgres-schema-config --from-file=schema.sql=platform_infra/postgres-schema.sql -n explorer-zone --dry-run=client -o yaml | kubectl apply -f -
+	@echo "🚀 2. Applying static database manifest blueprint infrastructure..."
+	@kubectl apply -f platform_infra/postgres-ledger.yaml
+	@echo "🔄 3. Forcing rolling database reload to apply fresh schemas..."
+	@kubectl rollout restart deployment/postgres-db -n explorer-zone
+	@echo "⏳ 4. Waiting for primary database engine to open its network port slots..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/postgres-db --timeout=90s
+	@echo "🎛️ 5. Wiping any old run artifacts and firing the standalone schema migration Job..."
+	@kubectl delete job platform-schema-migrator -n explorer-zone --ignore-not-found=true
+	@kubectl apply -f platform_infra/postgres-migrator-job.yaml
+	@echo "✔ [SUCCESS]: SQL schemas successfully compiled and migrated natively inside the cluster volumes."

@@ -1,0 +1,98 @@
+# =========================================================================
+# 📡 1. THE INTERNAL & EXTERNAL NETWORK SERVICE CHANNEL (Service)
+# =========================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-kafka-broker
+  namespace: explorer-zone
+  labels:
+    app: enterprise-kafka-broker
+spec:
+  # 🟢 CHANGED: Set to NodePort to expose Kafka directly onto your Mac hardware loop
+  type: NodePort
+  selector:
+    app: enterprise-kafka-broker
+  ports:
+  - name: broker-wire
+    port: 9092
+    targetPort: 9092
+  - name: schema-registry
+    port: 8081
+    targetPort: 8081
+  # 🟢 FIX: Maps incoming port 29092 external traffic from your Mac Mini straight to Kafka!
+  - name: broker-external
+    port: 29092
+    targetPort: 29092
+    nodePort: 32092
+
+---
+# =========================================================================
+# ⚙️ 2. THE SELF-CONTAINED KRAFT STREAMING ENGINE (Deployment)
+# =========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-kafka-broker
+  namespace: explorer-zone
+  labels:
+    app: enterprise-kafka-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-kafka-broker
+  template:
+    metadata:
+      labels:
+        app: enterprise-kafka-broker
+    spec:
+      containers:
+      # 🔵 PRIMARY MULTI-LISTENER APACHE KRAFT MESSAGE BUS CONTAINER
+      - name: kafka-engine
+        image: apache/kafka:3.7.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9092
+        - containerPort: 29092
+        env:
+        - name: KAFKA_NODE_ID
+          value: "1"
+        - name: KAFKA_PROCESS_ROLES
+          value: "broker,controller"
+        - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+          value: "1@localhost:9093"
+        # 🟢 FIX: Configure independent internal, external, and controller sockets
+        - name: KAFKA_LISTENERS
+          value: "INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "INTERNAL"
+        - name: KAFKA_CONTROLLER_LISTENER_NAMES
+          value: "CONTROLLER"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+        # 🟢 FIX: Routes cluster pods to 9092, and Mac host processes to port 32092!
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "INTERNAL://enterprise-kafka-broker:9092,EXTERNAL://localhost:32092"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_NUM_PARTITIONS
+          value: "3"
+
+      # 🟢 THE SIDE-CAR: Co-locate the Schema Registry inside the exact same pod network space
+      - name: schema-registry-sidecar
+        image: confluentinc/cp-schema-registry:7.6.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8081
+          name: registry-port
+        env:
+        # Connects directly to the neighboring container inside the same pod network shell
+        - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+          value: "PLAINTEXT://localhost:9092"
+        - name: SCHEMA_REGISTRY_HOST_NAME
+          value: "localhost"
+        - name: SCHEMA_REGISTRY_LISTENERS
+          value: "http://0.0.0.0:8081"

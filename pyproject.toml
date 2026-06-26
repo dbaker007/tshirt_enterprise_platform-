@@ -9,6 +9,7 @@ dependencies = [
     "finance",
     "notifications",
     "observability",
+    "outbox_daemon",
     "opentelemetry-api>=1.24.0",
     "opentelemetry-sdk>=1.24.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.24.0",
@@ -22,6 +23,14 @@ shipping = { workspace = true }
 finance = { workspace = true }
 notifications = { workspace = true }
 observability = { workspace = true }
+outbox_daemon = { workspace = true }
 
 [tool.uv.workspace]
-members = ["sales", "finance", "shipping", "notifications", "observability"]
+members = [
+    "sales",
+    "finance",
+    "shipping",
+    "notifications",
+    "observability",
+    "outbox_daemon"
+]

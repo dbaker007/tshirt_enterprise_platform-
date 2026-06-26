@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sales-order-entry
+  namespace: explorer-zone
+  labels:
+    app: sales-order-entry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sales-order-entry
+  template:
+    metadata:
+      labels:
+        app: sales-order-entry
+      annotations:
+        # 🟢 AUTOMATION KEY: Forces K8s to register a text modification on every single make run!
+        platform.dev/compiled-at: "DEPLOYMENT_TIMESTAMP"
+    spec:
+      containers:
+      - name: web-gateway
+        image: tshirt-enterprise-platform/sales-order-entry:latest
+        # 🟢 CHANGED: Allows K8s to cleanly reload fresh local kind load bytes instantly!
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_HOST
+          value: "postgres-service"
+        - name: SALES_API_DB_PORT
+          value: "5432"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "enterprise-kafka-broker:9092"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sales-order-entry-service
+  namespace: explorer-zone
+spec:
+  type: ClusterIP
+  selector:
+    app: sales-order-entry
+  ports:
+  - port: 8000
+    targetPort: 8000

@@ -36,14 +36,19 @@ class MicroserviceConsumerApp(ABC):
         self.logger = logging.getLogger(f"{service_name.upper()}.APP")
         self.tracer = initialize_tracer(service_name)
 
-        KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-        SCHEMA_REGISTRY_URL = "http://localhost:8081/apis/ccompat/v7"
+        KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8081")
 
         registry_client = SchemaRegistryClient({"url": SCHEMA_REGISTRY_URL})
         # 🛠️ FIXED: Symmetrical schema path resolution relative to its new nested home!
-        schemas_root = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "schemas")
+        project_root = os.getenv(
+            "PROJECT_ROOT",
+            os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+            ),
         )
+        schemas_root = os.path.join(project_root, "schemas")
+
         schema_path = os.path.join(schemas_root, schema_filename)
 
         with open(schema_path, "r") as f:

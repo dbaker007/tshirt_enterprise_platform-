@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-service
+  namespace: explorer-zone
+  labels:
+    app: notifications-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications-service
+  template:
+    metadata:
+      labels:
+        app: notifications-service
+      annotations:
+        # Dynamic timestamp annotation forces K8s to reload fresh local bytes on every run!
+        platform.dev/compiled-at: "DEPLOYMENT_TIMESTAMP"
+    spec:
+      containers:
+      - name: consumer-worker
+        image: tshirt-enterprise-platform/notifications-service:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: DATABASE_HOST
+          value: "postgres-service"
+        - name: NOTIFICATIONS_DB_PORT
+          value: "5432"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "enterprise-kafka-broker:9092"
+        - name: PROJECT_ROOT
+          value: "/platform_app"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4318/v1/traces"
+        - name: SCHEMA_REGISTRY_URL
+          value: "http://enterprise-kafka-broker:8081"

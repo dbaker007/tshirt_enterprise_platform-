@@ -1,7 +1,6 @@
-import sys
-
 from observability.framework.app_base import MicroserviceConsumerApp
 
+from finance.db import init_finance_db
 from finance.graph import finance_graph_engine
 
 
@@ -12,6 +11,7 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
     """
 
     def __init__(self):
+        init_finance_db()
         super().__init__(
             service_name="finance-auditing-service",
             group_base_id="enterprise_finance_processing_group",
@@ -20,8 +20,16 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
         )
 
     def execute_business_logic(self, order_payload: dict, action: str):
-        # Simply fire your decoupled LangGraph execution engine cleanly inside the parent window
-        finance_graph_engine.invoke({"order_event": order_payload})
+        self.logger.info(
+            f"📥 [FINANCE CONSUMER INGEST]: Received control signal: {action}"
+        )
+        finance_graph_engine.invoke(
+            {
+                "order_event": order_payload,
+                "action": str(action),  # Enforces the global "action" contract handle!
+                "status": "STARTED",  # Resets state status loop metrics natively
+            }
+        )
 
 
 if __name__ == "__main__":

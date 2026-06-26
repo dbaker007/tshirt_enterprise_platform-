@@ -5,11 +5,14 @@ description = "Shipping Department Logistics and Compensation Service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "confluent-kafka[avro]>=2.3.0",
-    "fastavro>=1.9.4",
-    "sqlalchemy>=2.0.27",
-    "psycopg2-binary>=2.9.9",
-    "pytest>=9.0.3",
+    "langgraph>=0.1.0",
+    "confluent-kafka[avro,schemaregistry]>=2.3.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "opentelemetry-api>=1.24.0",
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.24.0",
+    "opentelemetry-instrumentation-wsgi>=0.45b0"
 ]
 
 [tool.uv]

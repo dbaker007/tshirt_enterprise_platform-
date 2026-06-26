@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 import time
-from typing import Callable, Generic, List, Tuple, TypeVar
+from typing import Any, Callable, Generic, List, Tuple, TypeVar
 
 from confluent_kafka import Producer
 from confluent_kafka.schema_registry import SchemaRegistryClient
@@ -30,7 +30,7 @@ class OutboxDaemonEngine(Generic[T_Model]):
         daemon_name: str,
         client_id: str,
         session_factory: Callable[[], Session],
-        outbox_model: T_Model,
+        outbox_model: Any,  # Generic type matching your declarative base models
         poll_interval: float = 2.0,
     ):
         self.service_name = service_name
@@ -39,9 +39,13 @@ class OutboxDaemonEngine(Generic[T_Model]):
         self.outbox_model = outbox_model
         self.poll_interval = poll_interval
 
-        # 1. Initialize Universal Kafka Network Coordinates
-        KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-        SCHEMA_REGISTRY_URL = "http://localhost:8081/apis/ccompat/v7"
+        # =========================================================================
+        # 🟢 1. DYNAMIC KAFKA BROKER CONNECTIONS (Environment-Aware)
+        # =========================================================================
+        KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        SCHEMA_REGISTRY_URL = os.getenv(
+            "SCHEMA_REGISTRY_URL", "http://localhost:8081/apis/ccompat/v7"
+        )
 
         KAFKA_CONFIG = {
             "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
@@ -51,13 +55,17 @@ class OutboxDaemonEngine(Generic[T_Model]):
         }
         self.producer = Producer(KAFKA_CONFIG)
 
-        # 2. Universal Schema Registry Compilation
+        # =========================================================================
+        # 🟢 2. DYNAMIC APACHE AVRO SCHEMA EVALUATIONS (Environment-Aware)
+        # =========================================================================
         self.schema_registry_client = SchemaRegistryClient({"url": SCHEMA_REGISTRY_URL})
 
-        # 🛠️ FIXED: Symmetrical schema path resolution relative to its new nested home!
-        schemas_root = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "schemas")
+        # Symmetrical project root directory resolution anchors
+        project_root = os.getenv(
+            "PROJECT_ROOT",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")),
         )
+        schemas_root = os.path.join(project_root, "schemas")
 
         with open(os.path.join(schemas_root, "command_envelope.avsc"), "r") as f:
             command_schema_str = f.read()
@@ -71,7 +79,9 @@ class OutboxDaemonEngine(Generic[T_Model]):
             self.schema_registry_client, reply_schema_str, lambda obj, ctx: obj
         )
 
-        # 3. OpenTelemetry Process Initialization
+        # =========================================================================
+        # 🟢 3. OPENTELEMETRY TRACING ENGINE REGISTRATION
+        # =========================================================================
         from observability.tracing import initialize_tracer
 
         self.tracer = initialize_tracer(service_name)

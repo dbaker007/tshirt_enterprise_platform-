@@ -65,26 +65,6 @@ services:
       echo '✔ [SUCCESS]: All enterprise partition slots committed to cluster disk.'
       "
 
-  # =========================================================================
-  # 4. THE SHARED DATA LEDGER (POSTGRESQL INSTANCE)
-  # =========================================================================
-  postgres-db:
-    image: postgres:15-alpine
-    container_name: enterprise_postgres_ledger
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: platform_admin
-      POSTGRES_PASSWORD: admin_secure_password
-      POSTGRES_DB: platform_shared_ledger
-    volumes:
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U platform_admin -d platform_shared_ledger"]
-      interval: 3s
-      timeout: 3s
-      retries: 5
-      start_period: 2s
 
   # =========================================================================
   # 5. DISTRIBUTED TELEMETRY HUB (JAEGER OTLP http/gRPC COLLECTOR)
