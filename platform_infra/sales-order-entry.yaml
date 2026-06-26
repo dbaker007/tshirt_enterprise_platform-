@@ -34,6 +34,10 @@ spec:
           value: "enterprise-kafka-broker:9092"
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4318/v1/traces"
+        - name: OTEL_SERVICE_NAME
+          value: "sales-gateway-api"
 
 ---
 apiVersion: v1

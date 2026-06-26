@@ -1,9 +1,8 @@
-import json
-import logging
 import uuid
 
 from observability.framework.app_base import MicroserviceConsumerApp
 from observability.outbox import stage_outbox_message
+from opentelemetry import trace
 from sales.orchestrator.db import SagaState, SessionLocal, init_orchestrator_db
 
 
@@ -93,71 +92,47 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
 
     def process_incoming_saga_reply(self, reply: dict):
         """Processes worker responses against the central checklist logs to guide the Saga path."""
-        print(
-            f"\n📥 [ORCHESTRATOR RAW INGESTION]: Received packet layout: {repr(reply)} (Type: {type(reply)})"
-        )
+        tracer = trace.get_tracer("sales-saga-orchestrator")
 
-        db = SessionLocal()
-        order_id = reply.get("order_id")
-        dept = reply.get("department")
-        status = reply.get("status")
+        with tracer.start_as_current_span("process_incoming_saga_reply") as span:
+            db = SessionLocal()
+            order_id = reply.get("order_id")
+            dept = reply.get("department")
+            status = reply.get("status")
+            reason = str(reply.get("reason", "")).lower()
 
-        print(
-            f"   ├── Parsed Keys -> order_id: {repr(order_id)} | dept: {repr(dept)} | status: {repr(status)}"
-        )
-
-        try:
-            state = db.query(SagaState).filter(SagaState.order_id == order_id).first()
-            if not state:
-                print(
-                    f"   |── ❌ [LOOKUP FAILURE]: SagaState record not found on disk for Order UUID: {order_id}"
+            try:
+                state = (
+                    db.query(SagaState).filter(SagaState.order_id == order_id).first()
                 )
-                return
-
-            print(
-                f"   ├── 🔍 [PRE-MUTATION STATE DUMP]: Order UUID: {order_id}\n"
-                f"   │   ├── Global Saga Status:   {state.saga_status}\n"
-                f"   │   ├── Finance Register:     {state.finance_status}\n"
-                f"   │   ├── Shipping Register:    {state.shipping_status}\n"
-                f"   │   └── Notification Register: {state.notifications_status}"
-            )
-
-            if state.saga_status in ["COMPLETED", "IN_TRANSIT", "ROLLED_BACK"]:
-                print(
-                    f"   └── ⚠️ [ALREADY TERMINAL]: State is already {state.saga_status}. Skipping."
-                )
-                return
-
-            self.logger.info(
-                f"Evaluating Status Reply | Department: {dept} | Outcome: {status} | Order: {order_id}"
-            )
-
-            # Enforce clean protocol contract status mapping rules
-            if status == "SUCCESS":
-                mapped_status = "SUCCESS"
-            elif status == "ROLLED_BACK":
-                mapped_status = "ROLLED_BACK"
-            else:
-                mapped_status = "FAILED"
-
-            # 🟢 COMPENSATION LIFECYCLE ROUTING BLOCK
-            if state.saga_status == "REJECTED":
-                # Guard: Drop lagging forward success replies if they match an already populated success column
-                current_register_val = getattr(state, f"{dept.lower()}_status")
-                if mapped_status == "SUCCESS" and current_register_val in [
-                    "SUCCESS",
-                    "ROLLED_BACK",
-                ]:
-                    print(
-                        f"   └── ⚠️  [LAGGING FORWARD DROP]: Worker {dept} sent SUCCESS, but register reads {current_register_val}. "
-                        f"Bypassing overwrite to protect compensation context."
+                if not state:
+                    self.logger.error(
+                        f"SagaState record not found on disk for Order UUID: {order_id}"
                     )
-                    db.commit()
                     return
 
-                print(
-                    f"   └── 🛠️  [COMPENSATION RECORDED]: Logging rollback step for {dept} -> {mapped_status}"
+                span.set_attribute("order.correlation_id", str(order_id))
+                span.set_attribute("worker.department", str(dept))
+                span.set_attribute("worker.status_outcome", str(status))
+
+                self.logger.info(
+                    f"Evaluating Status Reply | Department: {dept} | Outcome: {status} | Order: {order_id}"
                 )
+
+                # 🟢 STEP 1: Parse the clean protocol status contract rules
+                # Differentiate between a lagging forward pass and an actual compensation rollback completion
+                if (
+                    "compensation" in reason
+                    or "released" in reason
+                    or "rolled" in reason
+                ):
+                    mapped_status = "ROLLED_BACK"
+                elif status == "SUCCESS":
+                    mapped_status = "SUCCESS"
+                else:
+                    mapped_status = "FAILED"
+
+                # 🟢 STEP 2: Update individual checklist registers dynamically
                 if dept == "FINANCE":
                     state.finance_status = mapped_status
                 elif dept == "SHIPPING":
@@ -165,74 +140,41 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
                 elif dept == "NOTIFICATIONS":
                     state.notifications_status = mapped_status
 
-                # Check if all sibling registers have completed their terminal failure or rollback cycles
-                if (
-                    state.finance_status in ["FAILED", "ROLLED_BACK"]
-                    and state.shipping_status in ["FAILED", "ROLLED_BACK"]
-                    and state.notifications_status in ["FAILED", "ROLLED_BACK"]
-                ):
-                    state.saga_status = "ROLLED_BACK"
-                    print(
-                        f"   └── 🔄 [SAGA EVOLUTION]: All compensation paths verified! Flipped order {order_id} to ROLLED_BACK."
+                # 🟢 STEP 3: Centralized Global Lifecycle State Evolution
+                # Trigger initial failure rejection and dispatch compensations immediately
+                if mapped_status == "FAILED" and state.saga_status != "REJECTED":
+                    state.saga_status = "REJECTED"
+                    self.issue_compensating_cancellations(
+                        db, order_id, triggering_dept=dept
                     )
 
+                # Symmetrical forward path completion verification check
+                elif (
+                    state.saga_status == "STARTED"
+                    and state.finance_status == "SUCCESS"
+                    and state.shipping_status == "SUCCESS"
+                    and state.notifications_status == "SUCCESS"
+                ):
+                    state.saga_status = "IN_TRANSIT"
+                    self.logger.info(
+                        f"🏆 IN_TRANSIT | All Workers Cleared Checklist | Saga Order: {order_id} Dispatched."
+                    )
+
+                # 🟢 STEP 4: ATOMIC UNIT OF WORK TRANSACTION PASS
+                # Execute exactly one single commit block at the absolute end of a successful cycle
                 db.commit()
-                print(
-                    f"   └── 💾 [DB COMMIT]: Saved compensation fields.\n"
-                    f"       ├── Global Saga Status:   {state.saga_status}\n"
-                    f"       ├── Finance Register:     {state.finance_status}\n"
-                    f"       ├── Shipping Register:    {state.shipping_status}\n"
-                    f"       └── Notification Register: {state.notifications_status}"
+
+            except Exception as e:
+                db.rollback()
+                span.record_exception(e)
+                span.set_status(
+                    trace.Status(trace.StatusCode.ERROR, description=str(e))
                 )
-                return
-
-            # --- STANDARD FORWARD PROCESSING BLOCK ---
-            if dept == "FINANCE":
-                state.finance_status = mapped_status
-            elif dept == "SHIPPING":
-                state.shipping_status = mapped_status
-            elif dept == "NOTIFICATIONS":
-                state.notifications_status = mapped_status
-
-            # Trigger initial failure rejection and dispatch compensations immediately
-            if mapped_status == "FAILED" and state.saga_status != "REJECTED":
-                state.saga_status = "REJECTED"
-                self.issue_compensating_cancellations(
-                    db, order_id, triggering_dept=dept
+                self.logger.error(
+                    f"Saga Conductor Database Process Exception: {str(e)}"
                 )
-                db.commit()
-                print(
-                    f"   └── 🚨 [INITIATED REJECTION]: Hard REJECTED recorded. Compensations dispatched for Order: {order_id}"
-                )
-                return
-
-            # Symmetrical forward path verification check
-            if (
-                state.saga_status == "STARTED"
-                and state.finance_status == "SUCCESS"
-                and state.shipping_status == "SUCCESS"
-                and state.notifications_status == "SUCCESS"
-            ):
-                state.saga_status = "IN_TRANSIT"
-                self.logger.info(
-                    f"🏆 IN_TRANSIT | All Workers Cleared Checklist | Saga Order: {order_id} Dispatched."
-                )
-
-            db.commit()
-            print(
-                f"   └── 💾 [DB COMMIT]: Saved state fields to ledger disk.\n"
-                f"       ├── Global Saga Status:   {state.saga_status}\n"
-                f"       ├── Finance Register:     {state.finance_status}\n"
-                f"       ├── Shipping Register:    {state.shipping_status}\n"
-                f"       └── Notification Register: {state.notifications_status}"
-            )
-
-        except Exception as e:
-            db.rollback()
-            print(f"   └── 💡 [CRITICAL CONDUCTOR EXCEPTION]: {str(e)}")
-            self.logger.error(f"Saga Conductor Database Process Exception: {str(e)}")
-        finally:
-            db.close()
+            finally:
+                db.close()
 
 
 if __name__ == "__main__":

@@ -53,16 +53,24 @@ class KafkaHeaderGetter:
 kafka_getter = KafkaHeaderGetter()
 
 
-def initialize_tracer(service_name: str) -> trace.Tracer:
+def initialize_tracer(service_name: str = None) -> trace.Tracer:
     global _PROVIDER_INITIALIZED
+
+    # Resolve an effective lookup string purely for internal SDK instance caching handles
+    effective_name = (
+        service_name or os.getenv("OTEL_SERVICE_NAME") or "unnamed-service-fallback"
+    )
 
     if _PROVIDER_INITIALIZED or isinstance(trace.get_tracer_provider(), TracerProvider):
         _PROVIDER_INITIALIZED = True
-        return trace.get_tracer(service_name)
+        return trace.get_tracer(effective_name)
 
-    resource = Resource.create(
-        attributes={"service.name": service_name, "environment": "development"}
-    )
+    # 🟢 FIX: If service_name is omitted, let Resource.create() scan the OS automagically!
+    resource_attributes = {"environment": "development"}
+    if service_name:
+        resource_attributes["service.name"] = service_name
+
+    resource = Resource.create(attributes=resource_attributes)
 
     provider = TracerProvider(resource=resource)
     jaeger_endpoint = os.getenv(
@@ -82,7 +90,7 @@ def initialize_tracer(service_name: str) -> trace.Tracer:
     set_global_textmap(TraceContextTextMapPropagator())
     atexit.register(flush_telemetry_traces)
 
-    return trace.get_tracer(service_name)
+    return trace.get_tracer(effective_name)
 
 
 def flush_telemetry_traces():
@@ -107,19 +115,28 @@ def flush_telemetry_traces():
 # 🏆 AUTOMATIC FLUSHING ASYNC KAFKA MIDDLEWARE INTERCEPTOR
 # =========================================================================
 @contextmanager
-def trace_kafka_message(service_tracer: trace.Tracer, span_name: str, kafka_msg):
-    """Context manager that manually extracts remote W3C wire headers, binds
-    asynchronous thread contexts, and triggers real-time telemetry cache flushes.
+def trace_kafka_message(
+    service_tracer: trace.Tracer,
+    span_name: str,
+    kafka_msg,
+    extracted_carrier: dict = None,
+):
+    """Context manager that extracts remote W3C wire headers, binds
+    asynchronous thread contexts, and triggers real-time telemetry cache flushes. [1.1]
     """
-    raw_headers = kafka_msg.headers() or []
-
-    # 1. Extract the active W3C parent trace context dictionary from the wire list
-    extracted_context = extract(raw_headers, getter=kafka_getter)
+    # 🟢 FIX: If a pre-extracted carrier dictionary is provided, parse it using the W3C propagator natively!
+    if extracted_carrier and "traceparent" in extracted_carrier:
+        extracted_context = extract(
+            extracted_carrier, getter=trace.propagation.get_global_textmap()
+        )
+    else:
+        # Fall back to checking native top-level transport wire headers list
+        raw_headers = kafka_msg.headers() or []
+        extracted_context = extract(raw_headers, getter=kafka_getter)
 
     remote_span = trace.get_current_span(extracted_context)
     remote_span_context = remote_span.get_span_context()
 
-    # Build an active runtime context wrapper that explicitly inherits your remote parent tracking metadata
     if remote_span_context.is_valid:
         runtime_context = trace.set_span_in_context(
             trace.NonRecordingSpan(remote_span_context)
@@ -127,11 +144,9 @@ def trace_kafka_message(service_tracer: trace.Tracer, span_name: str, kafka_msg)
     else:
         runtime_context = context.get_current()
 
-    # Hard-attach the synchronized runtime context straight to the active process thread frame
     token = context.attach(runtime_context)
 
     try:
-        # Start the child span directly bound to the synchronized runtime context layer
         with service_tracer.start_as_current_span(
             span_name, context=runtime_context, kind=trace.SpanKind.SERVER
         ) as span:
@@ -145,8 +160,5 @@ def trace_kafka_message(service_tracer: trace.Tracer, span_name: str, kafka_msg)
             span.set_attribute("kafka.partition", kafka_msg.partition())
             yield span
     finally:
-        # Tear down memory references safely
         context.detach(token)
-
-        # Force an instant flush of the telemetry buffer to the Jaeger container database index
         flush_telemetry_traces()

@@ -108,8 +108,19 @@ class MicroserviceConsumerApp(ABC):
                     if "order_id" not in order_payload:
                         order_payload["order_id"] = envelope.get("order_id")
 
+                    # 🟢 FIX: Extract the embedded W3C string out of the Avro envelope payload!
+                    # Construct a compliant carrier mapping to stitch the asynchronous parent timeline.
+                    extracted_carrier = {}
+                    w3c_string = envelope.get("trace_context")
+                    if w3c_string:
+                        extracted_carrier["traceparent"] = str(w3c_string)
+
+                    # Pass the extracted carrier dictionary cleanly into your tracing middleware utility
                     with trace_kafka_message(
-                        self.tracer, f"kafka_receive_{self.topic_channel}", msg
+                        self.tracer,
+                        f"kafka_receive_{self.topic_channel}",
+                        msg,
+                        extracted_carrier=extracted_carrier,
                     ):
                         self.execute_business_logic(order_payload, action)
 

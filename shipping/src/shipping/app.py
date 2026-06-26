@@ -1,5 +1,3 @@
-import sys
-
 from observability.framework.app_base import MicroserviceConsumerApp
 
 from shipping.db import init_shipping_db

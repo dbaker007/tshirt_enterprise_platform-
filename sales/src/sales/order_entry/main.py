@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -10,6 +11,9 @@ from fastapi import FastAPI, HTTPException
 # =========================================================================
 from observability.tracing import initialize_tracer
 from opentelemetry import trace
+
+# 🟢 IMPORT THE FASTAPI MIDDLEWARE INSTRUMENTOR
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from sales.order_entry.db import init_sales_db
 
 # 🟢 STANDARDIZED IMPORTS: Pull your stateless database workers and connection factory
@@ -22,7 +26,7 @@ from .db import (
 )
 
 # CRITICAL BEST PRACTICE: Must execute globally at the file root level to hook into memory properly
-tracer = initialize_tracer("sales-gateway-api")
+tracer = initialize_tracer()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +46,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# 🟢 FIX: Nailed to the mast! Instrument the FastAPI app instance to preserve async tracing states! [1.1]
+FastAPIInstrumentor.instrument_app(app)
 
 
 @app.post("/sales/")
