@@ -12,12 +12,14 @@ COPY sales/pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r pyproject.toml
 
-
-COPY sales/src/sales/order_entry /platform_app/sales/order_entry
-
+# 🟢 SOLUTION: Copy the overarching source package tree to capture all submodules uniformly!
+COPY sales/src/sales /platform_app/sales
 COPY observability/src/observability /platform_app/observability
+# 🟢 SOLUTION: Explicitly mount the platform root to resolve parent namespace exploration tracks
+ENV PYTHONPATH="/platform_app"
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
+# Execute the web tier using standard, top-level module path navigation syntax
 CMD ["uvicorn", "sales.order_entry.main:app", "--host", "0.0.0.0", "--port", "8000"]

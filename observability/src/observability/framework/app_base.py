@@ -40,16 +40,22 @@ class MicroserviceConsumerApp(ABC):
         SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8081")
 
         registry_client = SchemaRegistryClient({"url": SCHEMA_REGISTRY_URL})
-        # 🛠️ FIXED: Symmetrical schema path resolution relative to its new nested home!
-        project_root = os.getenv(
-            "PROJECT_ROOT",
-            os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
-            ),
-        )
-        schemas_root = os.path.join(project_root, "schemas")
 
+        # Extract the environment override variable cleanly
+        env_root = os.getenv("PROJECT_ROOT")
+
+        # 🟢 FIX: Verify if the env path exists and contains schemas; if not, fall back to getcwd()!
+        if env_root and os.path.exists(os.path.join(env_root, "schemas")):
+            project_root = env_root
+        else:
+            project_root = os.getcwd()
+
+        schemas_root = os.path.join(project_root, "schemas")
         schema_path = os.path.join(schemas_root, schema_filename)
+
+        self.logger.info(
+            f"📡 [FRAMEWORK INIT]: Resolving Avro Contract Schema Path -> {schema_path}"
+        )
 
         with open(schema_path, "r") as f:
             schema_str = f.read()
@@ -108,8 +114,7 @@ class MicroserviceConsumerApp(ABC):
                     if "order_id" not in order_payload:
                         order_payload["order_id"] = envelope.get("order_id")
 
-                    # 🟢 FIX: Extract the embedded W3C string out of the Avro envelope payload!
-                    # Construct a compliant carrier mapping to stitch the asynchronous parent timeline.
+                    # Extract the embedded W3C string out of the Avro envelope payload!
                     extracted_carrier = {}
                     w3c_string = envelope.get("trace_context")
                     if w3c_string:

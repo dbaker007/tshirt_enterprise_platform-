@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sales.order_entry.main import app
 
-# Standardized client configuration for standard test loops
 client = TestClient(app, raise_server_exceptions=True)
 
 
@@ -16,7 +15,6 @@ def test_create_sale_endpoint_returns_processed_status(
     mock_stage_outbox, mock_init_saga, mock_persist_invoice, mock_resolve_customer
 ):
     """Verifies that the /sales/ endpoint successfully captures valid payloads and returns indices."""
-    # 1. Setup mock records to match database entity objects
     mock_customer = MagicMock()
     mock_customer.id = 111
     mock_customer.customer_name = "Test Buyer"
@@ -34,7 +32,6 @@ def test_create_sale_endpoint_returns_processed_status(
         "customer": {"email": "test-buyer@gmail.com"},
     }
 
-    # Intercept SessionLocal to prevent live network connection attempts
     with patch("sales.order_entry.main.SessionLocal"):
         response = client.post("/sales/", json=valid_payload)
 
@@ -49,7 +46,7 @@ def test_create_sale_endpoint_returns_processed_status(
 def test_create_sale_endpoint_rejects_malformed_string_amounts(mock_persist_invoice):
     """Verifies that the /sales/ endpoint instantly throws an HTTP 400 error on non-numeric strings."""
     malformed_payload = {
-        "amount": "$10,000",  # ❌ Strict validation wall trigger
+        "amount": "$10,000",
         "item_id": "SHIRT_STANDARD_BLUE",
         "customer": {"email": "bad-formatting@gmail.com"},
     }
@@ -60,21 +57,17 @@ def test_create_sale_endpoint_rejects_malformed_string_amounts(mock_persist_invo
     assert response.status_code == 400
     assert "Invalid payload amount format" in response.json()["detail"]
 
-    # Guarantee the transaction pipeline was immediately blocked and never triggered database workers
     mock_persist_invoice.assert_not_called()
 
 
 def test_create_sale_endpoint_handles_internal_exceptions_gracefully():
     """Verifies that the API correctly bubbles database processing exceptions as standard HTTP 500 responses."""
-
     local_client = TestClient(app, raise_server_exceptions=False)
 
     with patch("sales.order_entry.main.SessionLocal") as mock_session_maker:
-        # 1. Instantiate a mock database session object context
         mock_db_instance = MagicMock()
         mock_session_maker.return_value = mock_db_instance
 
-        # 2. Force the inner commit execution step to drop a database timeout error!
         mock_db_instance.commit.side_effect = RuntimeError(
             "Database flush transaction hold-lock timeout."
         )

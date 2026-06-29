@@ -3,27 +3,30 @@
 # =========================================================================
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runtime
 
+# 🟢 SOLUTION: Align the internal container workspace path with your cluster standard! [1.1]
 WORKDIR /platform_app
 
-# Copy the master domain package manifest belonging to the Outbox family
-COPY outbox_daemon/pyproject.toml ./
+# Mount the compiler cache layer and copy the repository metadata blueprints
+# This captures your single, deterministic top-level lockfile context cleanly
+COPY pyproject.toml uv.lock ./
 
-# 🟢 CACHE BUSTER WALL: Modifying this date string character forces Docker to invalidate 
-# all downstream cache steps, guaranteeing a true, un-cached network package download pass!
-ENV PLATFORM_BUILD_TIMESTAMP="2026-06-24_15:30"
+# Copy the entire monorepo directory tree structure to satisfy workspace members
+COPY outbox_daemon/ ./outbox_daemon
+COPY observability/ ./observability
+COPY schemas/ ./schemas
+COPY sales/ ./sales
+COPY finance/ ./finance
+COPY shipping/ ./shipping
+COPY notifications/ ./notifications
 
-# Mount the compiler cache layer and download requirements instantly
+# 🟢 SOLUTION: Build an optimized, isolated runtime layer targeting ONLY the outbox daemon inside /platform_app [1.1]
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system --no-cache-dir -r pyproject.toml
+    uv sync --frozen --no-dev --package outbox_daemon
 
-# Perfect repository alignment: Copying directly from your flat root directory
-COPY outbox_daemon/src/outbox_daemon /platform_app/outbox_daemon
-COPY observability/src/observability /platform_app/observability
-COPY schemas /platform_app/schemas
-
-# Explicitly append your absolute application lookup variables
-ENV PYTHONPATH="/platform_app:/platform_app/outbox_daemon:/platform_app/observability"
+# 🟢 SOLUTION: Route your primary system execution path directly into your aligned workspace virtual environment [1.1]
+ENV PATH="/platform_app/.venv/bin:$PATH"
+ENV PYTHONPATH="/platform_app/outbox_daemon/src:/platform_app/observability/src"
 ENV PYTHONUNBUFFERED=1
 
-# Execute the primary consumer app loop natively from the root workspace
+# Execute the primary consumer app loop natively using your standard module lookup paths
 CMD ["python", "-m", "outbox_daemon.main"]

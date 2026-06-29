@@ -3,26 +3,18 @@ import os
 import uuid
 from datetime import datetime
 
-from observability.db import get_platform_database_url
 from observability.outbox import stage_outbox_message
-from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+# 🟢 SOLUTION: Import the single source of truth shared base and model!
+from sales.shared_models import SagaState, SharedBase
+from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy.orm import DeclarativeBase, Session
 
 logger = logging.getLogger("SALES_SERVICE.DATABASE")
 
 
 class Base(DeclarativeBase):
     pass
-
-
-# =========================================================================
-# 📡 COREDNS NETWORK ROUTING CONTROLS (Environment-Aware)
-# =========================================================================
-LOCAL_PORT = os.environ.get("SALES_API_DB_PORT", "5432")
-DATABASE_URL = get_platform_database_url(port=LOCAL_PORT)
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 # =========================================================================
@@ -43,19 +35,12 @@ class Invoice(Base):
     amount = Column(Float, index=True)
 
 
-class SagaState(Base):
-    __tablename__ = "saga_states"
-    order_id = Column(String, primary_key=True, index=True)
-    saga_status = Column(String, nullable=False)
-    finance_status = Column(String, default="PENDING")
-    shipping_status = Column(String, default="PENDING")
-    notifications_status = Column(String, default="PENDING")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-def init_sales_db():
+# 🟢 SOLUTION: Accept the engine runtime parameter context explicitly!
+def init_sales_db(engine) -> None:
+    """Binds and maps the core sales order schema definitions straight onto the provided engines."""
     Base.metadata.create_all(bind=engine)
+    # 🟢 SOLUTION: Map the centralized shared model components onto this database engine as well!
+    SharedBase.metadata.create_all(bind=engine)
 
 
 # =========================================================================
@@ -91,14 +76,30 @@ def persist_invoice_record(
     return new_invoice
 
 
-def initialize_saga_state_tracking(db: Session, order_id: str) -> None:
+# 🟢 SOLUTION: Update the signature to accept and persist the transaction payload variables!
+def initialize_saga_state_tracking(
+    db: Session, order_id: str, avro_payload: dict
+) -> None:
     """Stateless worker. Instantiates the tracking checklist row inside the orchestration table."""
+    address_info = avro_payload.get("shipping_address", {})
+
     saga_tracking_log = SagaState(
         order_id=str(order_id),
         saga_status="STARTED",
         finance_status="PENDING",
         shipping_status="PENDING",
         notifications_status="PENDING",
+        # 🟢 SOLUTION: Populate the tracking metrics columns natively during checkout!
+        customer_name=str(avro_payload.get("customer_name", "Unknown Buyer")),
+        customer_email=str(
+            avro_payload.get("customer_email", "unknown@platform.internal")
+        ),
+        amount=float(avro_payload.get("amount", 0.0)),
+        item_id=str(avro_payload.get("item_id", "SHIRT_STANDARD_BLUE")),
+        shipping_street=str(address_info.get("street", "123 Transaction Way")),
+        shipping_city=str(address_info.get("city", "Default Ville")),
+        shipping_state=str(address_info.get("state", "OH")),
+        shipping_postal=str(address_info.get("postal_code", "00000")),
     )
     db.add(saga_tracking_log)
 

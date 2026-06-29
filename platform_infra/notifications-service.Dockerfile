@@ -3,25 +3,29 @@
 # =========================================================================
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runtime
 
-WORKDIR /platform_app
+WORKDIR /workspace
 
-# Copy the master domain package manifest belonging to the Notifications family
-COPY notifications/pyproject.toml ./
+# Mount the compiler cache layer and copy the repository metadata blueprints
+# This captures your single, deterministic top-level lockfile context cleanly
+COPY pyproject.toml uv.lock ./
 
-# Mount the compiler cache layer and download requirements instantly
+# Copy the entire monorepo directory tree structure to satisfy workspace members
+COPY notifications/ ./notifications
+COPY finance/ ./finance
+COPY observability/ ./observability
+COPY schemas/ ./schemas
+COPY sales/ ./sales
+COPY shipping/ ./shipping
+COPY outbox_daemon/ ./outbox_daemon
+
+# 🟢 SOLUTION: Build an optimized, isolated runtime layer targeting ONLY notifications
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r pyproject.toml
+    uv sync --frozen --no-dev --package notifications
 
-# Copy your core decoupled notifications application package
-COPY notifications/src/notifications /platform_app/notifications
-
-# Copy your shared enterprise telemetry package right into Python's path
-COPY observability/src/observability /platform_app/observability
-COPY schemas /platform_app/schemas
-
-# Explicitly append your absolute application lookup variables
-ENV PYTHONPATH="/platform_app:/platform_app/observability"
+# 🟢 SOLUTION: Route your primary system execution path directly into uv's .venv bin directory
+ENV PATH="/workspace/.venv/bin:$PATH"
+ENV PYTHONPATH="/workspace/notifications/src:/workspace/observability/src"
 ENV PYTHONUNBUFFERED=1
 
-# Execute the primary consumer app loop natively
+# Execute the primary consumer app loop natively using your standard module lookup paths
 CMD ["python", "-m", "notifications.app"]

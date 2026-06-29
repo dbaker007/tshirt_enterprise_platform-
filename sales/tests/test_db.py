@@ -27,7 +27,12 @@ def test_sales_order_entry_workers_execute_atomically(test_sales_ram_session):
         "customer_email": "bob@vanceair.com",
         "amount": order_amount,
         "item_id": "SHIRT_PREMIUM_RED",
-        "shipping_address": {"state": "PA"},
+        "shipping_address": {
+            "street": "123 Default Way",
+            "city": "Scranton",
+            "state": "PA",
+            "postal_code": "18503",
+        },
     }
 
     # Execute your split stateless workers using the shared transaction context
@@ -38,7 +43,9 @@ def test_sales_order_entry_workers_execute_atomically(test_sales_ram_session):
         customer_id=customer_record.id,
         amount=order_amount,
     )
-    initialize_saga_state_tracking(db, generated_order_id)
+
+    # 🟢 SOLUTION: Align parameters by passing the payload mapping block natively!
+    initialize_saga_state_tracking(db, generated_order_id, avro_compatible_payload)
     stage_saga_command_envelopes(db, generated_order_id, avro_compatible_payload)
 
     # Commit the RAM transaction out-of-band to verify persistence
@@ -58,6 +65,8 @@ def test_sales_order_entry_workers_execute_atomically(test_sales_ram_session):
     saga = db.query(SagaState).filter(SagaState.order_id == generated_order_id).first()
     assert saga is not None
     assert saga.saga_status == "STARTED"
+    assert saga.customer_name == "Bob Vance"
+    assert saga.amount == 120.50
 
     # 4. Verify three separate command rows were staged in your central platform outbox table!
     outbox_count = db.execute(text("SELECT count(*) FROM platform_outbox;")).scalar()

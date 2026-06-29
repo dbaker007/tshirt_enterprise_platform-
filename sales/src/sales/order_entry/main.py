@@ -5,27 +5,23 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-
-# =========================================================================
-# 🛠️ GLOBAL OPENTELEMETRY TRACING CORE INITIALIZATION
-# =========================================================================
+from observability.db import get_platform_database_url
+from observability.outbox import stage_outbox_message
 from observability.tracing import initialize_tracer
 from opentelemetry import trace
-
-# 🟢 IMPORT THE FASTAPI MIDDLEWARE INSTRUMENTOR
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from sales.order_entry.db import init_sales_db
-
-# 🟢 STANDARDIZED IMPORTS: Pull your stateless database workers and connection factory
-from .db import (
-    SessionLocal,
+from sales.order_entry.db import (
+    init_sales_db,
     initialize_saga_state_tracking,
     persist_invoice_record,
     resolve_or_create_customer,
     stage_saga_command_envelopes,
 )
+from sales.shared_models import SagaState
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-# CRITICAL BEST PRACTICE: Must execute globally at the file root level to hook into memory properly
+# CRITICAL BEST PRACTICE: Execute tracer hooking globally at the file root level
 tracer = initialize_tracer()
 
 logging.basicConfig(
@@ -35,11 +31,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SALES_GATEWAY")
 
+# =========================================================================
+# 📡 CENTRALIZED INFRASTRUCTURE DRIVER INITIALIZATION
+# =========================================================================
+LOCAL_PORT = os.environ.get("SALES_GATEWAY_DB_PORT", "5432")
+DATABASE_URL = get_platform_database_url(port=LOCAL_PORT)
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing Sales Gateway API Container Node...")
-    init_sales_db()
+    # 🟢 SOLUTION: Pass your engine dependency cleanly to the refactored schema initializer!
+    init_sales_db(engine)
     logger.info("Sales Gateway Web Tier Core initialized successfully inside cluster.")
     yield
     logger.info("Shutting down Sales Gateway...")
@@ -47,10 +53,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# 🟢 FIX: Nailed to the mast! Instrument the FastAPI app instance to preserve async tracing states! [1.1]
+# Instrument the FastAPI app instance to preserve async tracing states!
 FastAPIInstrumentor.instrument_app(app)
 
 
+# =========================================================================
+# FORWARD CHECKOUT ROADWAY ROUTE
+# =========================================================================
+@app.post("/sales/")
 @app.post("/sales/")
 async def create_sale(transaction: dict):
     """Public gateway checkout checkpoint for handling consumer order payloads."""
@@ -61,9 +71,7 @@ async def create_sale(transaction: dict):
         f"🚀 [PIPELINE VERIFIED]: Ingesting Checkout Request | Customer Email: {customer_email} | Amount: ${transaction.get('amount')}"
     )
 
-    # 🟢 START THE MASTER PARENT TRACING CONTEXT WINDOW
     with tracer.start_as_current_span("http_create_sale_request") as span:
-        # Enforce strict float casting wall. Fail fast on bad data formats!
         try:
             order_amount = float(transaction.get("amount", 0.0))
         except (ValueError, TypeError):
@@ -75,13 +83,11 @@ async def create_sale(transaction: dict):
                 detail="Invalid payload amount format. Parameter must be a clean numeric float/integer value.",
             )
 
-        # Attach high-utility attributes to make your Jaeger UI console searchable
         span.set_attribute("http.method", "POST")
         span.set_attribute("customer.email", customer_email)
         span.set_attribute("order.amount", order_amount)
         span.set_attribute("item.id", transaction.get("item_id", "SHIRT_STANDARD_BLUE"))
 
-        # 🟢 TRANSACTION UNIT OF WORK: Explicit lifecycle block inside the entrypoint route!
         db = SessionLocal()
         generated_order_id = str(uuid.uuid4())
 
@@ -97,10 +103,7 @@ async def create_sale(transaction: dict):
                 amount=order_amount,
             )
 
-            # 3. Instantiate the tracking checklist row inside the orchestration table
-            initialize_saga_state_tracking(db, generated_order_id)
-
-            # 4. Construct the payload dictionary envelope contract
+            # 3. Construct the payload dictionary envelope contract first
             raw_address_info = transaction.get("shipping_address", {})
             avro_compatible_payload = {
                 "customer_name": customer_record.customer_name,
@@ -115,6 +118,11 @@ async def create_sale(transaction: dict):
                 },
             }
 
+            # 4. 🟢 SOLUTION: Pass the complete payload parameter dictionary straight into your worker!
+            initialize_saga_state_tracking(
+                db, generated_order_id, avro_compatible_payload
+            )
+
             # 5. Stage individual downstream commands to the universal outbox table
             stage_saga_command_envelopes(
                 db, generated_order_id, avro_compatible_payload
@@ -123,7 +131,6 @@ async def create_sale(transaction: dict):
             # Commit everything safely in a single atomic pass
             db.commit()
 
-            # Map tracking indexes directly to the visual trace metadata tree
             span.set_attribute("order.correlation_id", generated_order_id)
             span.set_attribute("order.invoice_id", invoice_record.id)
 
@@ -138,12 +145,121 @@ async def create_sale(transaction: dict):
 
         except Exception as e:
             db.rollback()
-            # Automatically flag failures inside the graphical Jaeger timeline tree
             span.record_exception(e)
             span.set_status(trace.Status(trace.StatusCode.ERROR, description=str(e)))
             logger.error(f"HTTP Gateway Processing Exception Encountered: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Transaction processing failure: {str(e)}"
+            )
+        finally:
+            db.close()
+
+
+# =========================================================================
+# 🟢 EXTENSION: THE MISSING MANUAL RISK OVERRIDE ROUTE INTERFACE
+# =========================================================================
+
+
+@app.post("/sales/override")
+async def override_sale(verdict_payload: dict):
+    """Public gateway risk override checkpoint for manual human operator review holds."""
+    order_id = verdict_payload.get("order_id")
+    verdict = str(verdict_payload.get("verdict", "")).upper()
+
+    if not order_id or verdict not in ["APPROVE", "REJECT"]:
+        logger.warning(
+            f"❌ HTTP 400 Rejection: Invalid override payload options received: {verdict_payload}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Malformed override parameters. Required arguments: 'order_id' (UUID string) and 'verdict' ('APPROVE' or 'REJECT').",
+        )
+
+    logger.info(
+        f"🧑‍✈️ [MANUAL OVERRIDE ROUTER]: Processing operator verdict [{verdict}] for order [{order_id}]"
+    )
+
+    with tracer.start_as_current_span("http_override_sale_request") as span:
+        span.set_attribute("http.method", "POST")
+        span.set_attribute("order.correlation_id", str(order_id))
+        span.set_attribute("operator.verdict", verdict)
+
+        db = SessionLocal()
+        try:
+            # 🟢 SOLUTION: Rehydrate the original record fields from your database to pass Avro validation! [1.1]
+            state_record = (
+                db.query(SagaState).filter(SagaState.order_id == str(order_id)).first()
+            )
+            if not state_record:
+                raise HTTPException(
+                    status_code=44,
+                    detail=f"Transaction context matching UUID {order_id} not found.",
+                )
+
+            customer_name = getattr(state_record, "customer_name", "Unknown Buyer")
+            customer_email = getattr(
+                state_record, "customer_email", "unknown@platform.internal"
+            )
+            order_amount = float(getattr(state_record, "amount", 0.0))
+            item_id = getattr(state_record, "item_id", "SHIRT_STANDARD_BLUE")
+
+            shipping_state = getattr(state_record, "shipping_state", "OH")
+            street_address = getattr(
+                state_record, "shipping_street", "123 Transaction Way"
+            )
+            city_name = getattr(state_record, "shipping_city", "Default Ville")
+            postal_code = getattr(state_record, "shipping_postal", "00000")
+
+            # Construct a fully compliant OrderPayloadRecord layout containing your custom verdict variable [1.1]
+            avro_payload = {
+                "customer_name": str(customer_name),
+                "customer_email": str(customer_email),
+                "amount": order_amount,
+                "item_id": str(item_id),
+                "shipping_address": {
+                    "street": str(street_address),
+                    "city": str(city_name),
+                    "state": str(shipping_state),
+                    "postal_code": str(postal_code),
+                },
+            }
+
+            # 🟢 SOLUTION: Keep the authentic control string token completely un-faked! [1.1]
+            envelope = {
+                "command_id": str(uuid.uuid4()),
+                "order_id": str(order_id),
+                "action": "RESUME_REVIEW",  # Authentic control signal string passed through cleanly [1.1]
+                "verdict": verdict,  # Intercepted inside your finance consumer layer natively
+                "payload": avro_payload,
+            }
+
+            stage_outbox_message(
+                db=db,
+                topic="finance_commands",
+                partition_key=str(order_id),
+                payload=envelope,
+            )
+
+            db.commit()
+            logger.info(
+                f"✔ Manual override verdict successfully staged to platform outbox log for order [{order_id}]"
+            )
+            return {
+                "status": "OVERRIDE_STAGED",
+                "order_id": order_id,
+                "verdict": verdict,
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.rollback()
+            span.record_exception(e)
+            span.set_status(trace.Status(trace.StatusCode.ERROR, description=str(e)))
+            logger.error(f"HTTP Override Gateway Processing Exception: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Override transaction processing failure: {str(e)}",
             )
         finally:
             db.close()

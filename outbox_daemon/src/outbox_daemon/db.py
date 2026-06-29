@@ -1,9 +1,8 @@
 import os
 from datetime import datetime
 
-from observability.db import get_platform_database_url
-from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
@@ -11,17 +10,7 @@ class Base(DeclarativeBase):
 
 
 # =========================================================================
-# 📡 COREDNS INTERNAL CLUSTER NETWORK CHANNEL (Standardized Environment-Aware)
-# =========================================================================
-LOCAL_PORT = os.environ.get("OUTBOX_DAEMON_DB_PORT", "5432")
-DATABASE_URL = get_platform_database_url(port=LOCAL_PORT)
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-# =========================================================================
-# 🗄️ RELEVANT ENGINE POLLED TABLES ONLY
+# 🗄️ Core Outbox Log Shard Schema
 # =========================================================================
 class Outbox(Base):
     """The central unified platform outbox transaction log shard table layout."""
@@ -35,6 +24,6 @@ class Outbox(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# 🟢 FIX: Enforce uniform, self-contained schema initialization boundaries!
-def init_outbox_db():
+def init_outbox_db(engine) -> None:
+    """Binds and maps the outbox logging table schemas natively onto the provided engine context."""
     Base.metadata.create_all(bind=engine)

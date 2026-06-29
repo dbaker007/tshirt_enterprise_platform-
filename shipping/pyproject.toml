@@ -5,6 +5,8 @@ description = "Shipping Department Logistics and Compensation Service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "observability",
+    "langgraph-checkpoint-sqlite>=3.0.1",
     "langgraph>=0.1.0",
     "confluent-kafka[avro,schemaregistry]>=2.3.0",
     "sqlalchemy>=2.0.0",

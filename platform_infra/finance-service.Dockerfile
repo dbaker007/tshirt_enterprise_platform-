@@ -3,25 +3,26 @@
 # =========================================================================
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runtime
 
-WORKDIR /platform_app
+WORKDIR /workspace
 
-# Copy the master domain package manifest belonging to the Finance family
-COPY finance/pyproject.toml ./
+# Mount the compiler cache layer and copy the repository metadata blueprints
+COPY pyproject.toml uv.lock ./
 
-# Mount the compiler cache layer and download requirements instantly
+# Copy the entire monorepo directory tree structure to satisfy workspace members
+COPY finance/ ./finance
+COPY observability/ ./observability
+COPY schemas/ ./schemas
+COPY sales/ ./sales
+COPY shipping/ ./shipping
+COPY notifications/ ./notifications
+COPY outbox_daemon/ ./outbox_daemon
+
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r pyproject.toml
+    uv sync --frozen --no-dev --package finance
 
-# Copy your core decoupled finance application package
-COPY finance/src/finance /platform_app/finance
-
-# Copy your shared enterprise telemetry package right into Python's path
-COPY observability/src/observability /platform_app/observability
-COPY schemas /platform_app/schemas
-
-# Explicitly append your absolute application lookup variables
-ENV PYTHONPATH="/platform_app:/platform_app/observability"
+ENV PATH="/workspace/.venv/bin:$PATH"
+ENV PYTHONPATH="/workspace/finance/src:/workspace/observability/src"
 ENV PYTHONUNBUFFERED=1
 
-# Execute the primary consumer app loop natively
+# Execute the primary consumer app loop natively using your standard module lookup paths
 CMD ["python", "-m", "finance.app"]

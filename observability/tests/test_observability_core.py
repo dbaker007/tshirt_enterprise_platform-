@@ -2,8 +2,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# 🟢 RAM ISOLATION: Bind the cross-cutting utilities straight to an in-memory SQLite socket!
 from observability.outbox import Base, PlatformOutboxRecord, stage_outbox_message
 from observability.tracing import KafkaHeaderGetter, kafka_getter
 from sqlalchemy import create_engine
@@ -23,11 +21,6 @@ def test_ram_session():
         session.close()
 
 
-# =========================================================================
-# 🧪 PLATFORM UNIVERSAL OUTBOX UTIL TESTS
-# =========================================================================
-
-
 def test_stage_outbox_message_successfully_injects_and_serializes(test_ram_session):
     """Verifies that the shared outbox utility correctly captures thread payloads
 
@@ -35,7 +28,6 @@ def test_stage_outbox_message_successfully_injects_and_serializes(test_ram_sessi
     """
     mock_payload = {"order_id": "global-test-uuid-999", "status": "APPROVED"}
 
-    # Execute the outbox write pass directly inside the transient RAM session
     success = stage_outbox_message(
         db=test_ram_session,
         topic="test_topic",
@@ -45,13 +37,11 @@ def test_stage_outbox_message_successfully_injects_and_serializes(test_ram_sessi
 
     assert success is True
 
-    # Pull the record right out of the RAM engine to audit its properties
     record = test_ram_session.query(PlatformOutboxRecord).first()
     assert record is not None
     assert record.topic == "test_topic"
     assert record.partition_key == "global-test-uuid-999"
 
-    # Ensure it parsed down to a valid flat string payload
     parsed_payload = json.loads(record.payload)
     assert parsed_payload["order_id"] == "global-test-uuid-999"
 
@@ -65,7 +55,6 @@ def test_stage_outbox_message_raises_exception_on_serialization_failure(
     """
     from datetime import datetime
 
-    # Native datetime objects cannot be parsed by raw json.dumps()
     broken_payload = {"timestamp": datetime.utcnow()}
 
     with pytest.raises(Exception):
@@ -77,11 +66,6 @@ def test_stage_outbox_message_raises_exception_on_serialization_failure(
         )
 
 
-# =========================================================================
-# 🧪 OPENTELEMETRY KAFKA CONTEXT PROPAGATION TESTS
-# =========================================================================
-
-
 def test_kafka_header_getter_resolves_byte_and_string_keys_cleanly():
     """Verifies that the case-insensitive W3C header getter parses both raw wire
 
@@ -89,17 +73,14 @@ def test_kafka_header_getter_resolves_byte_and_string_keys_cleanly():
     """
     getter = KafkaHeaderGetter()
 
-    # Simulate a raw confluent-kafka wire headers list-of-tuples metadata structure
     mock_headers = [
         (b"traceparent", b"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
         ("Custom-Header", "StandardStringValue"),
     ]
 
-    # 1. Audit check binary extraction paths
     binary_result = getter.get(mock_headers, "traceparent")
     assert binary_result == ["00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"]
 
-    # 2. Audit check case-insensitive text extraction paths
     string_result = getter.get(mock_headers, "custom-header")
     assert string_result == ["StandardStringValue"]
 

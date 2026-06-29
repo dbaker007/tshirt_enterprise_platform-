@@ -3,9 +3,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# CLEAN DIRECT IMPORTS: Resolves naturally out-of-band via pythonpath = ["src"]
-from outbox_daemon.db import Outbox
-from outbox_daemon.main import process_single_row
+# Shield file loading by intercepting the centralized infrastructure factory at the absolute top [1.1]
+with patch(
+    "observability.db.get_platform_database_url", return_value="sqlite:///:memory:"
+):
+    from outbox_daemon.db import Outbox
+    from outbox_daemon.main import process_single_row
 
 
 @patch("outbox_daemon.main.Producer")
@@ -15,11 +18,13 @@ def test_daemon_extracts_and_serializes_valid_row_cleanly(
     mock_serializer, mock_registry, mock_producer_class, test_daemon_ram_session
 ):
     """Verifies that the daemon correctly parses valid rows and pushes them onto the broker."""
-    # Setup mock producer instance
     mock_producer_instance = MagicMock()
     mock_producer_class.return_value = mock_producer_instance
 
-    # 🟢 FIX: Provide a fully compliant schema payload signature to satisfy Avro constraints!
+    # Create a clean mock serializer callable that returns dummy bytes instead of hitting the network [1.1]
+    mock_serializer_instance = MagicMock()
+    mock_serializer_instance.return_value = b"mock-serialized-avro-bytes"
+
     sample_payload = {
         "order_id": "daemon-test-101",
         "department": "FINANCE",
@@ -37,8 +42,11 @@ def test_daemon_extracts_and_serializes_valid_row_cleanly(
     test_daemon_ram_session.add(row_entry)
     test_daemon_ram_session.commit()
 
-    # Use inline patching to safely mask the globally initialized producer object
-    with patch("outbox_daemon.main.producer", mock_producer_instance):
+    # Patch both the producer and the reply_serializer on the daemon main module namespace [1.1]
+    with (
+        patch("outbox_daemon.main.producer", mock_producer_instance),
+        patch("outbox_daemon.main.reply_serializer", mock_serializer_instance),
+    ):
         success = process_single_row(db=test_daemon_ram_session, row=row_entry)
         assert success is True
         mock_producer_instance.produce.assert_called_once()

@@ -1,27 +1,14 @@
 import os
 from datetime import datetime
 
-from observability.db import get_platform_database_url
-
-# IMPORT UNIVERSAL SYSTEM UTILITIES
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from observability.outbox import stage_outbox_message
-from sqlalchemy import Column, DateTime, Integer, String, create_engine
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy.orm import DeclarativeBase, Session
 
 
 class Base(DeclarativeBase):
     pass
-
-
-# =========================================================================
-# 📡 COREDNS INTERNAL CLUSTER NETWORK CHANNEL (Environment-Aware)
-# =========================================================================
-LOCAL_PORT = os.environ.get("SHIPPING_API_DB_PORT", "5432")
-DATABASE_URL = get_platform_database_url(port=LOCAL_PORT)
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class ShippingLedger(Base):
@@ -32,31 +19,47 @@ class ShippingLedger(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-def init_shipping_db():
+def init_shipping_db(engine) -> None:
+    """Binds and maps the core relational schema definitions straight onto the provided engine runtime context."""
     Base.metadata.create_all(bind=engine)
+
+
+async def get_shipping_checkpointer() -> AsyncSqliteSaver:
+    """Instantiates and returns the persistent non-blocking asynchronous SQLite checkpointer instance."""
+    checkpoint_db_path = os.environ.get(
+        "SHIPPING_CHECKPOINT_DB_PATH", "shipping_checkpoints.sqlite"
+    )
+    return AsyncSqliteSaver.from_conn_string(checkpoint_db_path)
+
+
+from sqlalchemy.exc import IntegrityError
 
 
 def persist_shipping_ledger_record(
     db: Session, order_id: str, ledger_status: str
 ) -> None:
     """Stateless data access worker.
-    Compiles and executes a native PostgreSQL atomic UPSERT statement on the server.
+    Uses a safe integrity-catch block to handle race conditions across dialects.
     """
-    # 1. Prepare a standard insert statement
-    stmt = insert(ShippingLedger).values(
-        order_id=str(order_id), execution_status=str(ledger_status)
-    )
+    target_order_id = str(order_id)
+    status_str = str(ledger_status)
 
-    # 2. Compile the "ON CONFLICT DO UPDATE" clause using your unique constraint target column
-    upsert_stmt = stmt.on_conflict_do_update(
-        index_elements=[ShippingLedger.order_id],  # The unique constraint column target
-        set_=dict(
-            execution_status=str(ledger_status)
-        ),  # What column field to alter on conflict
-    )
-
-    # 3. Stream the raw unified clause directly to the database hardware engine
-    db.execute(upsert_stmt)
+    try:
+        with db.begin_nested():
+            new_record = ShippingLedger(
+                order_id=target_order_id, execution_status=status_str
+            )
+            db.add(new_record)
+            db.flush()
+    except IntegrityError:
+        record = (
+            db.query(ShippingLedger)
+            .filter(ShippingLedger.order_id == target_order_id)
+            .first()
+        )
+        if record:
+            record.execution_status = status_str
+            db.flush()
 
 
 def stage_shipping_saga_reply(
@@ -87,4 +90,26 @@ def stage_shipping_saga_reply(
         topic="saga_replies",
         partition_key=str(order_id),
         payload=reply_envelope,
+    )
+
+
+def get_shipping_ledger_by_order_id(
+    db: Session, order_id: str
+) -> ShippingLedger | None:
+    """Programmatic Lookup: Retrieves the local shipping shard record for a specific order UUID."""
+    return (
+        db.query(ShippingLedger)
+        .filter(ShippingLedger.order_id == str(order_id))
+        .first()
+    )
+
+
+def get_all_shipping_ledgers_by_status(
+    db: Session, execution_status: str
+) -> list[ShippingLedger]:
+    """Programmatic Filter: Returns a list of all shipping records matching a specific execution status."""
+    return (
+        db.query(ShippingLedger)
+        .filter(ShippingLedger.execution_status == str(execution_status))
+        .all()
     )

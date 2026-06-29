@@ -1,131 +1,99 @@
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
+# Intercept network layers and database discovery *before* application evaluation
 with (
     patch("confluent_kafka.Consumer"),
     patch("confluent_kafka.schema_registry.SchemaRegistryClient", create=True),
     patch("confluent_kafka.schema_registry.avro.AvroDeserializer", create=True),
+    patch("opentelemetry.trace.get_tracer"),
+    patch("opentelemetry.sdk.trace.TracerProvider"),
+    patch(
+        "observability.db.get_platform_database_url", return_value="sqlite:///:memory:"
+    ),
 ):
-    from observability.outbox import Base as OutboxBase
-    from sales.orchestrator.db import Base, SagaState
     from sales.orchestrator.main import SalesSagaOrchestratorApplication
-
-
-@pytest.fixture(scope="function")
-def test_orchestrator_ram_session():
-    """Generates an independent, isolated relational memory canvas for orchestrator tests."""
-    engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}
-    )
-    Base.metadata.create_all(bind=engine)
-    OutboxBase.metadata.create_all(bind=engine)
-
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
+    from sales.shared_models import SagaState
 
 
 def test_orchestrator_advances_to_in_transit_on_complete_success_matrix(
-    test_orchestrator_ram_session,
+    test_sales_ram_session,
 ):
     """Verifies that the orchestrator advances saga_status to IN_TRANSIT when all workers register success."""
+    db = test_sales_ram_session
+    order_id = "saga-test-uuid-001"
+
+    # 🟢 SOLUTION: Explicitly seed columns to satisfy your shared models structure!
     running_saga = SagaState(
-        order_id="saga-test-uuid-001",
+        order_id=order_id,
         saga_status="STARTED",
         finance_status="PENDING",
         shipping_status="PENDING",
         notifications_status="PENDING",
+        customer_name="Test Buyer",
+        customer_email="test@platform.internal",
+        amount=100.00,
+        item_id="SHIRT_STANDARD_BLUE",
     )
-    test_orchestrator_ram_session.add(running_saga)
-    test_orchestrator_ram_session.commit()
+    db.add(running_saga)
+    db.commit()
 
-    with patch(
-        "sales.orchestrator.main.SessionLocal",
-        return_value=test_orchestrator_ram_session,
-    ):
+    with patch("sales.orchestrator.main.init_orchestrator_db"):
         app = SalesSagaOrchestratorApplication()
 
-        # 🟢 FIX: Passing "SUCCESS" ensures the orchestrator treats these as approved forward steps!
+        # Pass the test database session explicitly via parameter injection!
         app.process_incoming_saga_reply(
-            {
-                "order_id": "saga-test-uuid-001",
-                "department": "FINANCE",
-                "status": "SUCCESS",
-            }
+            {"order_id": order_id, "department": "FINANCE", "status": "SUCCESS"}, db=db
         )
         app.process_incoming_saga_reply(
-            {
-                "order_id": "saga-test-uuid-001",
-                "department": "SHIPPING",
-                "status": "SUCCESS",
-            }
+            {"order_id": order_id, "department": "SHIPPING", "status": "SUCCESS"}, db=db
         )
         app.process_incoming_saga_reply(
-            {
-                "order_id": "saga-test-uuid-001",
-                "department": "NOTIFICATIONS",
-                "status": "SUCCESS",
-            }
+            {"order_id": order_id, "department": "NOTIFICATIONS", "status": "SUCCESS"},
+            db=db,
         )
+        db.commit()
 
-    updated_saga = (
-        test_orchestrator_ram_session.query(SagaState)
-        .filter(SagaState.order_id == "saga-test-uuid-001")
-        .first()
-    )
+    updated_saga = db.query(SagaState).filter(SagaState.order_id == order_id).first()
     assert updated_saga.saga_status == "IN_TRANSIT"
     assert updated_saga.finance_status == "SUCCESS"
     assert updated_saga.shipping_status == "SUCCESS"
     assert updated_saga.notifications_status == "SUCCESS"
 
 
-@patch("sales.orchestrator.main.SessionLocal")
-def test_orchestrator_triggers_rollbacks_on_worker_failure(
-    mock_session_maker, test_orchestrator_ram_session
-):
+def test_orchestrator_triggers_rollbacks_on_worker_failure(test_sales_ram_session):
     """Verifies that a FAILED worker packet forces a saga rejection and triggers compensating commands."""
-    mock_session_maker.return_value = test_orchestrator_ram_session
+    db = test_sales_ram_session
+    order_id = "saga-failure-uuid-999"
 
+    # 🟢 SOLUTION: Explicitly seed columns to satisfy your shared models structure!
     running_saga = SagaState(
-        order_id="saga-failure-uuid-999",
+        order_id=order_id,
         saga_status="STARTED",
-        finance_status="CREDIT_APPROVED",  # Finance already cleared
+        finance_status="CREDIT_APPROVED",
         shipping_status="PENDING",
         notifications_status="PENDING",
+        customer_name="Test Buyer",
+        customer_email="test@platform.internal",
+        amount=100.00,
+        item_id="SHIRT_STANDARD_BLUE",
     )
-    test_orchestrator_ram_session.add(running_saga)
-    test_orchestrator_ram_session.commit()
+    db.add(running_saga)
+    db.commit()
 
-    app = SalesSagaOrchestratorApplication()
+    with patch("sales.orchestrator.main.init_orchestrator_db"):
+        app = SalesSagaOrchestratorApplication()
 
-    # Ingest a direct failure signal (e.g., Shipping legal violation)
-    app.process_incoming_saga_reply(
-        {
-            "order_id": "saga-failure-uuid-999",
-            "department": "SHIPPING",
-            "status": "FAILED",
-        }
-    )
+        # Pass the test database session explicitly via parameter injection!
+        app.process_incoming_saga_reply(
+            {"order_id": order_id, "department": "SHIPPING", "status": "FAILED"}, db=db
+        )
+        db.commit()
 
-    # 1. Ensure the master state was forcefully aborted on disk
-    updated_saga = (
-        test_orchestrator_ram_session.query(SagaState)
-        .filter(SagaState.order_id == "saga-failure-uuid-999")
-        .first()
-    )
+    updated_saga = db.query(SagaState).filter(SagaState.order_id == order_id).first()
     assert updated_saga.saga_status == "REJECTED"
 
-    # 2. Ensure compensating rollback messages were dual-written to your central platform outbox table! [1.1]
-    outbox_count = test_orchestrator_ram_session.execute(
-        text("SELECT count(*) FROM platform_outbox;")
-    ).scalar()
-    assert (
-        outbox_count == 2
-    )  # 2 cancellations staged (Finance and Notifications, bypassing the failed Shipping)
+    outbox_count = db.execute(text("SELECT count(*) FROM platform_outbox;")).scalar()
+    assert outbox_count == 2

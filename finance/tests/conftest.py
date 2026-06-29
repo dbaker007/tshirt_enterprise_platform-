@@ -1,7 +1,5 @@
 import pytest
-
-# 🟢 CRITICAL MODEL IMPORTS: Forcing python to parse and register the table schemas in memory [1.1]
-from finance.db import Base, FinanceLedger
+from finance.db import Base
 from observability.outbox import Base as OutboxBase
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,20 +7,25 @@ from sqlalchemy.orm import sessionmaker
 
 @pytest.fixture(scope="function")
 def test_db_session():
-    """Generates a high-speed, completely isolated SQL database container loop inside volatile RAM."""
-    # 🟢 RAM ISOLATION: Explicitly bind the session engine straight to an in-memory socket!
-    engine = create_engine(
+    """Generates a high-speed, completely isolated SQL database canvas inside volatile RAM
+
+    by pinning a single persistent connection across asynchronous task threads.
+    """
+    test_engine = create_engine(
         "sqlite:///:memory:", connect_args={"check_same_thread": False}
     )
 
-    # Idempotently map the core relational schema definitions straight onto the transient SQLite engine [1.1]
-    Base.metadata.create_all(bind=engine)
-    OutboxBase.metadata.create_all(bind=engine)
+    connection = test_engine.connect()
+    Base.metadata.create_all(bind=connection)
+    OutboxBase.metadata.create_all(bind=connection)
 
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    TestingSessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=connection
+    )
     session = TestingSessionLocal()
 
     try:
         yield session
     finally:
         session.close()
+        connection.close()

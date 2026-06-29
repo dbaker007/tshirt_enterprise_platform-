@@ -12,13 +12,14 @@ COPY sales/pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r pyproject.toml
 
-# Copy only your decoupled orchestrator source code
+# 🟢 SOLUTION: Copy the overarching source package tree to capture all submodules uniformly!
 COPY sales/src/sales /platform_app/sales
 COPY observability/src/observability /platform_app/observability
-COPY schemas /platform_app/schemas
 
-# 🟢 FIX: Append your shared tracking package route directly into Python's path array! [1.1]
-ENV PYTHONPATH="/platform_app:/platform_app/observability"
+COPY schemas /platform_app/schemas
+# 🟢 SOLUTION: Explicitly mount the platform root to resolve parent namespace exploration tracks
+ENV PYTHONPATH="/platform_app"
 ENV PYTHONUNBUFFERED=1
 
+# 🟢 SOLUTION: Execute the orchestration loop using your original path-based navigation standard!
 CMD ["python", "sales/orchestrator/main.py"]

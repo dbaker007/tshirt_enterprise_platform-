@@ -326,39 +326,37 @@ kube-notifications-start: system-init ## Compile, sideload, and execute a rollin
 # =========================================================================
 # 🧪 PLATFORM TESTING TRACKS (Cross-Domain Test Matrix Verification)
 # =========================================================================
-
 .PHONY: test-all
 test-all: ## Execute all microservice unit tests sequentially and fail-fast if any single test drops out
-	@echo "🧪 [TEST MATRIX]: Initiating full platform verification sweeps..."
+	@echo "🧪 [TEST MATRIX]: Initiating full platform verification sweeps completely offline..."
 	@echo "🔍 0. Executing static code compilation analysis across all packages..."
 	@uv run python -c "import compileall, sys; sys.exit(0 if all([compileall.compile_dir(d, quiet=1) for d in ['finance', 'shipping', 'notifications', 'sales', 'outbox_daemon', 'observability']]) else 1)" || (echo "❌ [COMPILE ERROR]: Syntax or import violations detected in your codebase!" && exit 1)
 	@echo "✔  [SUCCESS]: Static compilation analysis cleared clean."
 	@FAILED=0; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "🛍️  1. Running Sales Domain Test Matrix..."; \
-	(cd sales && uv run pytest) || FAILED=1; \
+	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest sales/tests/) || FAILED=1; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "💰 2. Running Finance Domain Test Matrix..."; \
-	(cd finance && uv run pytest) || FAILED=1; \
+	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest finance/tests/) || FAILED=1; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "🚚 3. Running Shipping Domain Test Matrix..."; \
-	(cd shipping && uv run pytest) || FAILED=1; \
+	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest shipping/tests/) || FAILED=1; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "🔔 4. Running Notifications Domain Test Matrix..."; \
-	(cd notifications && uv run pytest) || FAILED=1; \
+	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest notifications/tests/) || FAILED=1; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "🗄️  5. Running Observability Shared Library Test Matrix..."; \
-	(uv run pytest observability/tests/) || FAILED=1; \
+	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest observability/tests/) || FAILED=1; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "📤 6. Running Universal Outbox Daemon Test Matrix..."; \
-	(cd outbox_daemon && uv run pytest) || FAILED=1; \
+	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest outbox_daemon/tests/) || FAILED=1; \
 	echo "================================================================================="; \
 	if [ $$FAILED -ne 0 ]; then \
 		echo "❌ [FAILURE]: One or more test suites failed verification. Aborting build matrix."; \
 		exit 1; \
 	fi; \
 	echo "✔ [SUCCESS]: Complete platform testing matrix passed verification checks!"
-
 
 .PHONY: kube-namespace-init
 kube-namespace-init: kube-cluster-init ## Provision and isolate the core platform partition zone inside the cluster
@@ -369,3 +367,8 @@ kube-namespace-init: kube-cluster-init ## Provision and isolate the core platfor
 	else \
 		echo "⚠️  Namespace 'explorer-zone' already initialized. Skipping creation block."; \
 	fi
+
+.PHONY: test-integration
+test-integration: ## Execute complete cross-domain integration test suite against the active cluster mesh
+	@echo "📡 Running cross-domain Saga integration tests against live cluster..."
+	@pytest tests/integration/ -v

@@ -1,13 +1,12 @@
 import logging
 from typing import Any, Dict, Literal
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from opentelemetry import trace
 from typing_extensions import TypedDict
 
-# 🟢 STANDARDIZED IMPORTS: Pull your stateless database workers and connection factory
 from shipping.db import (
-    SessionLocal,
     persist_shipping_ledger_record,
     stage_shipping_saga_reply,
 )
@@ -31,7 +30,6 @@ def route_initial_ingress_directive(
     state: ShippingState,
 ) -> Literal["evaluate_geography_compliance", "execute_compensation_rollback"]:
     """GATEWAY ROUTER: Inspects the raw control action before any business nodes execute."""
-    # Permissively check for action or action_type from the framework envelope mapping
     action = state.get("action_type") or state.get("action") or "NEW_SALE"
 
     if action == "CANCEL_TRANSACTION":
@@ -57,7 +55,6 @@ def evaluate_geography_compliance(state: ShippingState) -> Dict[str, Any]:
             f"LangGraph Evaluating Geography Compliance | Destination State: {target_state}"
         )
 
-        # PLAYGROUND COMPLIANCE LAW: Michigan is flagged as a restricted zone!
         if target_state in ["MI", "MICHIGAN"]:
             logger.warning(
                 f"Legal Restrictive Violation Intercepted | Order UUID: {event.get('order_id')} is blocked from Michigan shipping routes."
@@ -68,7 +65,7 @@ def evaluate_geography_compliance(state: ShippingState) -> Dict[str, Any]:
         return {"status": "PASSED_COMPLIANCE", "order_event": event}
 
 
-def execute_fulfillment(state: ShippingState) -> Dict[str, Any]:
+def execute_fulfillment(state: ShippingState, config: RunnableConfig) -> Dict[str, Any]:
     with tracer.start_as_current_span("langgraph_execute_fulfillment"):
         event = state["order_event"]
         order_id = event.get("order_id", "unknown-uuid")
@@ -76,33 +73,28 @@ def execute_fulfillment(state: ShippingState) -> Dict[str, Any]:
             f"Fulfillment Node Approved | Securing freight routes for Order: {order_id}"
         )
 
-        # 🟢 TRANSACTION UNIT OF WORK: Explicit lifecycle block inside the execution node!
-        db = SessionLocal()
-        try:
-            persist_shipping_ledger_record(
-                db, order_id, ledger_status="SHIPMENT_SECURED"
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        db = config.get("configurable", {}).get("db")
+        if not db:
+            raise RuntimeError(
+                "Execution Boundary Violation: No active database session mapped in configuration context."
             )
-            stage_shipping_saga_reply(
-                db=db,
-                order_id=order_id,
-                wire_status="SUCCESS",
-                ledger_status="SHIPMENT_SECURED",
-                reason_text="Fulfillment cleared: Shipping route successfully locked on carrier schedule.",
-            )
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            logger.error(
-                f"❌ Failed to commit shipping fulfillment transaction: {str(e)}"
-            )
-            raise e
-        finally:
-            db.close()
+
+        persist_shipping_ledger_record(db, order_id, ledger_status="SHIPMENT_SECURED")
+        stage_shipping_saga_reply(
+            db=db,
+            order_id=order_id,
+            wire_status="SUCCESS",
+            ledger_status="SHIPMENT_SECURED",
+            reason_text="Fulfillment cleared: Shipping route successfully locked on carrier schedule.",
+        )
 
         return {"status": "COMPLETED", "order_event": event}
 
 
-def execute_legal_rejection(state: ShippingState) -> Dict[str, Any]:
+def execute_legal_rejection(
+    state: ShippingState, config: RunnableConfig
+) -> Dict[str, Any]:
     with tracer.start_as_current_span("langgraph_execute_legal_rejection") as span:
         event = state["order_event"]
         order_id = event.get("order_id", "unknown-uuid")
@@ -116,33 +108,28 @@ def execute_legal_rejection(state: ShippingState) -> Dict[str, Any]:
             f"Fulfillment Node Aborted | Staging Legal holds for Order: {order_id}"
         )
 
-        # 🟢 TRANSACTION UNIT OF WORK: Symmetrical fail-safe logic mapping
-        db = SessionLocal()
-        try:
-            persist_shipping_ledger_record(
-                db, order_id, ledger_status="LEGAL_REJECTION_MI"
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        db = config.get("configurable", {}).get("db")
+        if not db:
+            raise RuntimeError(
+                "Execution Boundary Violation: No active database session mapped in configuration context."
             )
-            stage_shipping_saga_reply(
-                db=db,
-                order_id=order_id,
-                wire_status="FAILED",
-                ledger_status="LEGAL_REJECTION_MI",
-                reason_text="Fulfillment Aborted: Legal distribution constraint prohibits shirt logistics inside Michigan.",
-            )
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            logger.error(
-                f"❌ Failed to commit shipping legal rejection transaction: {str(e)}"
-            )
-            raise e
-        finally:
-            db.close()
+
+        persist_shipping_ledger_record(db, order_id, ledger_status="LEGAL_REJECTION_MI")
+        stage_shipping_saga_reply(
+            db=db,
+            order_id=order_id,
+            wire_status="FAILED",
+            ledger_status="LEGAL_REJECTION_MI",
+            reason_text="Fulfillment Aborted: Legal distribution constraint prohibits shirt logistics inside Michigan.",
+        )
 
         return {"status": "COMPLETED", "order_event": event}
 
 
-def execute_compensation_rollback(state: ShippingState) -> Dict[str, Any]:
+def execute_compensation_rollback(
+    state: ShippingState, config: RunnableConfig
+) -> Dict[str, Any]:
     with tracer.start_as_current_span("langgraph_execute_compensation_rollback"):
         event = state["order_event"]
         order_id = event.get("order_id", "unknown-uuid")
@@ -150,28 +137,23 @@ def execute_compensation_rollback(state: ShippingState) -> Dict[str, Any]:
             f"Compensation Node Fired | Releasing freight routes for Order: {order_id}"
         )
 
-        # 🟢 TRANSACTION UNIT OF WORK: Symmetrical compensation signature mapping
-        db = SessionLocal()
-        try:
-            persist_shipping_ledger_record(
-                db, order_id, ledger_status="FREIGHT_ROUTE_RELEASED"
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        db = config.get("configurable", {}).get("db")
+        if not db:
+            raise RuntimeError(
+                "Execution Boundary Violation: No active database session mapped in configuration context."
             )
-            stage_shipping_saga_reply(
-                db=db,
-                order_id=order_id,
-                wire_status="ROLLED_BACK",
-                ledger_status="FREIGHT_ROUTE_RELEASED",
-                reason_text="Compensation rollback completed: Logistics inventory returned to open queue pools.",
-            )
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            logger.error(
-                f"❌ Failed to commit shipping compensation transaction: {str(e)}"
-            )
-            raise e
-        finally:
-            db.close()
+
+        persist_shipping_ledger_record(
+            db, order_id, ledger_status="FREIGHT_ROUTE_RELEASED"
+        )
+        stage_shipping_saga_reply(
+            db=db,
+            order_id=order_id,
+            wire_status="ROLLED_BACK",
+            ledger_status="FREIGHT_ROUTE_RELEASED",
+            reason_text="Compensation rollback completed: Logistics inventory returned to open queue pools.",
+        )
 
         return {"status": "COMPLETED", "order_event": event}
 
@@ -197,10 +179,7 @@ builder.add_node("execute_fulfillment", execute_fulfillment)
 builder.add_node("execute_legal_rejection", execute_legal_rejection)
 builder.add_node("execute_compensation_rollback", execute_compensation_rollback)
 
-# 🟢 FIX: Bind the entryway conditional router straight to the START node!
 builder.add_conditional_edges(START, route_initial_ingress_directive)
-
-# Map remaining forward path steps linearly
 builder.add_conditional_edges(
     "evaluate_geography_compliance", route_fulfillment_decision
 )

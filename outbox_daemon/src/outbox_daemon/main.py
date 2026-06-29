@@ -8,12 +8,13 @@ from confluent_kafka import Producer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import MessageField, SerializationContext
+from observability.db import get_platform_database_url
 from observability.tracing import initialize_tracer
 from opentelemetry import context, trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-
-# Import the unified database context directly
-from outbox_daemon.db import Outbox, SessionLocal, init_outbox_db
+from outbox_daemon.db import Outbox, init_outbox_db
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -66,7 +67,7 @@ MAX_RETRY_THRESHOLD = 3
 # =========================================================================
 # 🔬 CORE SINGLE ROW PIPELINE PROCESSING ENGINE
 # =========================================================================
-def process_single_row(db: SessionLocal, row: Outbox) -> bool:
+def process_single_row(db, row: Outbox) -> bool:
     """Extracts data values from the log shard and pushes onto the Kafka network wire."""
     target_topic = str(row.topic)
     row_key = str(row.partition_key)
@@ -102,7 +103,6 @@ def process_single_row(db: SessionLocal, row: Outbox) -> bool:
         kafka_headers.append(("traceparent", str(stored_trace_context).encode("utf-8")))
 
     try:
-        # 🚀 PERFORMANCE OPTIMIZATION: Produce asynchronously without inline flushing! [1.1]
         producer.produce(
             topic=target_topic,
             key=str(row_key).encode("utf-8"),
@@ -111,7 +111,6 @@ def process_single_row(db: SessionLocal, row: Outbox) -> bool:
             callback=delivery_report,
         )
 
-        # Trigger internal queue callbacks briefly to flush network buffers
         producer.poll(0)
         return True
 
@@ -125,9 +124,10 @@ def process_single_row(db: SessionLocal, row: Outbox) -> bool:
 # =========================================================================
 # 🎛️ BATCH SWEEP INTERFACE SCANNING ENGINE
 # =========================================================================
-def run_single_iteration() -> float:
+def run_single_iteration(session_factory) -> float:
     """Polls the platform_outbox table, joining parent traces and executing batch commits."""
-    db = SessionLocal()
+    # 🟢 DEPENDENCY INJECTION: Spin up session context via dynamic parameter factory [1.1]
+    db = session_factory()
     propagator = TraceContextTextMapPropagator()
     try:
         pending_records = db.query(Outbox).order_by(Outbox.id.asc()).limit(20).all()
@@ -139,7 +139,6 @@ def run_single_iteration() -> float:
             row_key = row.partition_key
             stored_trace_context = row.trace_context
 
-            # 🟢 OTel FIX: Reconstruct the remote parent span context from the row value! [1.1]
             parent_context = context.get_current()
             if stored_trace_context:
                 carrier = {"traceparent": str(stored_trace_context)}
@@ -186,7 +185,6 @@ def run_single_iteration() -> float:
                         return 0.0
                     return 0.0
 
-        # 🚀 BATCH FLUSH: Drain the entire message registry buffer onto the wire in one single packet pass! [1.1]
         producer.flush(timeout=5.0)
 
     except Exception as system_fault:
@@ -199,11 +197,17 @@ def run_single_iteration() -> float:
 
 if __name__ == "__main__":
     logger.info("🚀 Universal Outbox Daemon Active | Polling platform_outbox table...")
-    init_outbox_db()
+
+    # 🟢 BOOTSTRAP GATEWAY: Explicitly initialize and own connection lifecycle objects [1.1]
+    database_url = get_platform_database_url()
+    engine = create_engine(database_url)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    init_outbox_db(engine)
 
     try:
         while True:
-            backoff_sleep = run_single_iteration()
+            backoff_sleep = run_single_iteration(session_factory=SessionLocal)
             if backoff_sleep == 0.0:
                 time.sleep(POLL_INTERVAL)
             else:
