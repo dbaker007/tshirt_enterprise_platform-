@@ -1,5 +1,4 @@
 import asyncio
-import logging
 
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
@@ -52,13 +51,10 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
     async def _run_async_graph_pipeline(self, order_payload: dict, action: str):
         order_id = order_payload.get("order_id", "unknown-uuid")
         saver = await get_finance_checkpointer()
-
-        # 🟢 EXPLICIT DEPENDENCY INJECTION: Instantiate a clean local database connection pass [1.1]
         db = self.SessionLocal()
 
         try:
             async with saver as active_saver:
-                # 🟢 SOLUTION: Compile a fresh, stateful engine instance natively bound to the active saver token [1.1]
                 active_graph = builder.compile(checkpointer=active_saver)
 
                 config = {
@@ -82,17 +78,11 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
                         },
                         config,
                     )
-                # 🟢 SOLUTION: Clean, explicit extraction matching your true RESUME_REVIEW control signal [1.1]
-                elif str(action) == "RESUME_REVIEW" or (
-                    current_state and current_state.next
-                ):
-                    # Fetch the explicit verdict field passed natively through your framework envelope context [1.1]
-                    verdict = str(order_payload.get("verdict", "REJECT")).upper()
-
+                elif str(action) in ["APPROVE", "REJECT"]:
                     self.logger.info(
-                        f"🧑‍✈️ [RESUMING PAUSED THREAD]: Feeding clean human override token -> [{verdict}] into thread [{order_id}]"
+                        f"🧑‍✈️ [RESUMING PAUSED THREAD]: Feeding clean human override token -> [{action}] into thread [{order_id}]"
                     )
-                    await active_graph.ainvoke(Command(resume=str(verdict)), config)
+                    await active_graph.ainvoke(Command(resume=str(action)), config)
                 else:
                     self.logger.info(
                         f"🚀 [INITIALIZING NEW THREAD]: Spawning state track records for thread [{order_id}]"
@@ -101,19 +91,21 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
                         {
                             "order_event": order_payload,
                             "action": str(action),
-                            "status": "STARTED",
+                            "status": "NEW_ORDER",
                         },
                         config,
                     )
 
-                # Pure lifecycle cleanup logic execution block [1.1]
-                if str(action) == "CANCEL_TRANSACTION" or (
-                    current_state
-                    and current_state.next
-                    and order_payload.get("verdict") == "REJECT"
-                ):
+                post_execution_state = await active_graph.aget_state(config)
+
+                should_purge_thread = str(action) == "CANCEL_TRANSACTION" or (
+                    str(action) == "REJECT"
+                    and post_execution_state
+                    and not post_execution_state.next
+                )
+
+                if should_purge_thread:
                     try:
-                        # Invoke the deletion method straight on your active, opened saver token channel [1.1]
                         await active_saver.adelete_thread(config)
                         self.logger.info(
                             f"🗑️ [APPLICATION PURGE]: Evicted cancelled thread context [{order_id}] from storage."
@@ -123,11 +115,9 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
                             f"⚠️ Failed to purge checkpointer thread history out-of-band: {str(e)}"
                         )
 
-            # 🟢 COMMIT BOUNDARY: Atomically flush database transactions to disk after a successful pass [1.1]
             db.commit()
 
         except Exception as pipeline_err:
-            # 🟢 FAIL-SAFE: Safely rollback database transactions to shield tables from corrupt logs [1.1]
             db.rollback()
             self.logger.error(
                 f"❌ Application transaction processing failure: {str(pipeline_err)}"

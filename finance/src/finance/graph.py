@@ -31,10 +31,11 @@ def route_initial_ingress_directive(
     state: FinanceState,
 ) -> Literal["evaluate_financial_fraud_risk", "execute_compensation_rollback"]:
     """GATEWAY ROUTER: Inspects the raw control action before any business nodes execute."""
-    action = state.get("action") or state.get("status") or "NEW_SALE"
+    action = state.get("action")
 
     if action == "CANCEL_TRANSACTION":
         return "execute_compensation_rollback"
+
     return "evaluate_financial_fraud_risk"
 
 
@@ -68,7 +69,6 @@ def evaluate_financial_fraud_risk(
             )
             span.set_attribute("fraud.flagged", True)
 
-            # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
             db = config.get("configurable", {}).get("db")
             if not db:
                 raise RuntimeError(
@@ -79,7 +79,15 @@ def evaluate_financial_fraud_risk(
                 db, event.get("order_id"), ledger_status="PENDING_HUMAN_REVIEW"
             )
 
-            # 🟢 MODERN INLINE INTERRUPT: Pause execution right here!
+            stage_finance_saga_reply(
+                db,
+                order_id=event.get("order_id"),
+                wire_status="PENDING_HUMAN_REVIEW",
+                ledger_status="PENDING_HUMAN_REVIEW",
+            )
+
+            db.commit()
+
             human_verdict = interrupt(
                 {
                     "message": f"Transaction of ${order_amount} breaches limit threshold. Review required.",
@@ -90,9 +98,27 @@ def evaluate_financial_fraud_risk(
 
             logger.info(f"Manual operator review verdict received -> {human_verdict}")
 
+            db = config.get("configurable", {}).get("db")
+            if not db:
+                raise RuntimeError(
+                    "Execution Boundary Violation: No active database session mapped in resumption configuration context."
+                )
+
             if str(human_verdict).upper() == "APPROVE":
+                stage_finance_saga_reply(
+                    db,
+                    order_id=event.get("order_id"),
+                    wire_status="SUCCESS",
+                    ledger_status="CREDIT_APPROVED",
+                )
                 return {"status": "PASSED_RISK_CHECKS", "order_event": event}
             else:
+                stage_finance_saga_reply(
+                    db,
+                    order_id=event.get("order_id"),
+                    wire_status="FAILED",
+                    ledger_status="PAYMENT_REJECTED",
+                )
                 return {"status": "TRIGGER_FRAUD_REJECTION", "order_event": event}
 
         return {"status": "PASSED_RISK_CHECKS", "order_event": event}
@@ -182,9 +208,11 @@ def execute_compensation_rollback(
 def route_risk_decision(
     state: FinanceState,
 ) -> Literal["execute_fraud_rejection", "execute_approval"]:
-    if state.get("status") == "TRIGGER_FRAUD_REJECTION":
-        return "execute_fraud_rejection"
-    return "execute_approval"
+    """RISK ROUTER: Safe-by-default routing logic that fails shut on rejections."""
+    if state.get("status") == "PASSED_RISK_CHECKS":
+        return "execute_approval"
+
+    return "execute_fraud_rejection"
 
 
 # =========================================================================

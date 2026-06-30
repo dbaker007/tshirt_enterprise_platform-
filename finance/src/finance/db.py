@@ -4,7 +4,7 @@ from datetime import datetime
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from observability.outbox import stage_outbox_message
 from sqlalchemy import Column, DateTime, Integer, String
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Session
 
 
@@ -31,9 +31,6 @@ async def get_finance_checkpointer() -> AsyncSqliteSaver:
         "FINANCE_CHECKPOINT_DB_PATH", "finance_checkpoints.sqlite"
     )
     return AsyncSqliteSaver.from_conn_string(checkpoint_db_path)
-
-
-from sqlalchemy.exc import IntegrityError
 
 
 def persist_financial_ledger_record(

@@ -120,7 +120,6 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
             order_id = reply.get("order_id")
             dept = reply.get("department")
             status = reply.get("status")
-            reason = str(reply.get("reason", "")).lower()
 
             state = db.query(SagaState).filter(SagaState.order_id == order_id).first()
             if not state:
@@ -137,26 +136,30 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
                 f"Evaluating Status Reply | Department: {dept} | Outcome: {status} | Order: {order_id}"
             )
 
-            if "compensation" in reason or "released" in reason or "rolled" in reason:
-                mapped_status = "ROLLED_BACK"
-            elif status == "SUCCESS":
-                mapped_status = "SUCCESS"
-            else:
-                mapped_status = "FAILED"
-
+            # 🟢 STEP 1: Direct Mapping - Set the department status exactly to the wire status passed in
             if dept == "FINANCE":
-                state.finance_status = mapped_status
+                state.finance_status = status
             elif dept == "SHIPPING":
-                state.shipping_status = mapped_status
+                state.shipping_status = status
             elif dept == "NOTIFICATIONS":
-                state.notifications_status = mapped_status
+                state.notifications_status = status
 
-            if mapped_status == "FAILED" and state.saga_status != "REJECTED":
-                state.saga_status = "REJECTED"
-                self.issue_compensating_cancellations(
-                    db, order_id, triggering_dept=dept
-                )
+            # 🟢 STEP 2: Failure Evaluation & Idempotent Compensation Management
+            if status == "FAILED":
+                if state.saga_status != "REJECTED":
+                    state.saga_status = "REJECTED"
+                    self.logger.warning(
+                        f"🚨 Global Saga Rejected by {dept} for Order {order_id}. Issuing compensation workflows."
+                    )
+                    self.issue_compensating_cancellations(
+                        db, order_id, triggering_dept=dept
+                    )
+                else:
+                    self.logger.info(
+                        f"🔄 Compensation already in flight or executed for Order {order_id}. Skipping duplicate trigger."
+                    )
 
+            # 🟢 STEP 3: Forward Success Boundary Evaluation
             elif (
                 state.saga_status == "STARTED"
                 and state.finance_status == "SUCCESS"

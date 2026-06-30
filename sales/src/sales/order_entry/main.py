@@ -228,8 +228,7 @@ async def override_sale(verdict_payload: dict):
             envelope = {
                 "command_id": str(uuid.uuid4()),
                 "order_id": str(order_id),
-                "action": "RESUME_REVIEW",  # Authentic control signal string passed through cleanly [1.1]
-                "verdict": verdict,  # Intercepted inside your finance consumer layer natively
+                "action": verdict,  # Authentic control signal string passed through cleanly [1.1]
                 "payload": avro_payload,
             }
 
