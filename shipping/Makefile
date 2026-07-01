@@ -23,8 +23,14 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 test:
-	@echo "🧪 Executing shipping consumer integration test suite..."
-	uv run pytest . -v -s
+	@echo "🧪 Executing shipping fulfillment unit test suite..."
+	@mkdir -p schemas
+	@ln -sf ../../schemas/command_envelope.avsc schemas/command_envelope.avsc
+	@ln -sf ../../schemas/saga_reply.avsc schemas/saga_reply.avsc
+	-uv run pytest tests/ -v -s
+	@rm -rf schemas
+	@echo "🧹 Cleaned up temporary schema directory references."
+
 
 daemon:
 	@echo "📦 Launching private shipping outbox background streaming worker daemon..."

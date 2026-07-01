@@ -16,9 +16,11 @@ def test_saga_fraud_approval_override_and_completion_path(
     notifications_db_session,
 ):
     """INTEGRATION TEST: Verifies that an order over $200 hits a manual review hold,
-
     and successfully completes the forward checkout pipeline once an APPROVE
-    override verdict is submitted via the REST API gateway route [1.1].
+    override verdict is submitted via the REST API gateway route.
+
+    Conforms directly to the design layout where the orchestrator stays unchanged
+    until the HITL response is received.
     """
     fraud_trigger_payload = {
         "item_id": "SHIRT_ULTRA_LUXURY",
@@ -47,19 +49,22 @@ def test_saga_fraud_approval_override_and_completion_path(
     polling_interval = 1.0
     hit_review_hold = False
 
+    # 🟢 Act Part B: Poll the private Finance local ledger shard to confirm the hold is active
     for attempt in range(max_retries):
-        orchestrator_db_session.expire_all()
-        master_state = get_saga_state_by_order_id(orchestrator_db_session, order_id)
+        finance_db_session.expire_all()
+        finance_row = get_finance_ledger_by_order_id(finance_db_session, order_id)
 
-        if master_state and master_state.finance_status == "PENDING_HUMAN_REVIEW":
+        # Look directly at the shard table where the node explicitly commits its PENDING_HUMAN_REVIEW token
+        if finance_row and finance_row.execution_status == "PENDING_HUMAN_REVIEW":
             hit_review_hold = True
             break
         time.sleep(polling_interval)
 
     assert hit_review_hold, (
-        f"Master Saga state failed to transition to PENDING_HUMAN_REVIEW for Order {order_id}"
+        f"Finance local database shard failed to enter PENDING_HUMAN_REVIEW hold state for Order {order_id}"
     )
 
+    # Act Part C: Execute the manual APPROVE override pass straight via the gateway REST endpoint
     with httpx.Client() as client:
         override_response = client.post(
             f"{gateway_api_url}/sales/override",
@@ -83,10 +88,12 @@ def test_saga_fraud_approval_override_and_completion_path(
         )
 
         if master_state and master_state.saga_status == "IN_TRANSIT":
+            # 🟢 NEW SAGA PATTERN: The orchestrator stamps the exact descriptive values passed by the workers
             assert master_state.finance_status == "SUCCESS"
             assert master_state.shipping_status == "SUCCESS"
             assert master_state.notifications_status == "SUCCESS"
 
+            # Cross-assert that private database shards accurately record local execution states
             assert finance_row is not None
             assert finance_row.execution_status == "CREDIT_APPROVED"
 

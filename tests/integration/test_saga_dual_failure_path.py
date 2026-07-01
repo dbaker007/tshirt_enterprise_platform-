@@ -17,7 +17,7 @@ def test_saga_dual_failure_race_condition_path(
 ):
     """INTEGRATION TEST: Verifies that an order with a dual breach ($500 + MI) is handled
 
-    safely across both race condition paths, confirming global transactional consistency.
+    safely across both race condition paths, checking the new ledger_status contract data format [1.1].
     """
     dual_failure_payload = {
         "item_id": "SHIRT_ULTRA_LUXURY_MI",
@@ -60,19 +60,22 @@ def test_saga_dual_failure_race_condition_path(
         )
 
         if master_state and master_state.saga_status == "REJECTED":
+            # 🟢 NEW SAGA PATTERN: If shipping fails fast, it stamps its descriptive token directly
             shipping_wins = (
-                master_state.shipping_status == "FAILED"
+                master_state.shipping_status == "LEGAL_REJECTION_MI"
                 and master_state.finance_status == "ROLLED_BACK"
                 and master_state.notifications_status == "ROLLED_BACK"
             )
 
+            # 🟢 NEW SAGA PATTERN: If finance fails or is rejected first, check descriptive states
             finance_wins = (
-                master_state.finance_status == "FAILED"
+                master_state.finance_status == "PAYMENT_REJECTED"
                 and master_state.shipping_status == "ROLLED_BACK"
                 and master_state.notifications_status == "ROLLED_BACK"
             )
 
             if shipping_wins or finance_wins:
+                # Cross-assert database shards match the final forward execution outcome
                 assert finance_row is not None
                 assert finance_row.execution_status in [
                     "CREDIT_LINE_RELEASED",

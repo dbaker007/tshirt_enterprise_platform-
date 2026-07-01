@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from opentelemetry import trace
 from typing_extensions import TypedDict
 
+from notifications.constants import NOTIFICATION_SENT, ROLLED_BACK
 from notifications.db import (
     persist_communication_ledger_record,
     stage_notifications_saga_reply,
@@ -67,13 +68,13 @@ def process_notification_routing(
             db=db,
             order_id=str(order_id),
             customer_name=str(customer_name),
-            ledger_status="NOTIFICATION_SENT",
+            ledger_status=NOTIFICATION_SENT,
         )
         stage_notifications_saga_reply(
             db=db,
             order_id=str(order_id),
             wire_status="SUCCESS",
-            ledger_status="NOTIFICATION_SENT",
+            ledger_status="SUCCESS",
         )
 
         return {"status": "COMPLETED", "order_event": order_event, "action": action}
@@ -115,13 +116,13 @@ def process_compensation_rollback(
             db=db,
             order_id=str(order_id),
             customer_name=str(customer_name),
-            ledger_status="ROLLED_BACK",
+            ledger_status=ROLLED_BACK,
         )
         stage_notifications_saga_reply(
             db=db,
             order_id=str(order_id),
-            wire_status="ROLLED_BACK",
-            ledger_status="ROLLED_BACK",
+            wire_status="SUCCESS",
+            ledger_status=ROLLED_BACK,
         )
 
         return {"status": "COMPLETED", "order_event": order_event, "action": action}

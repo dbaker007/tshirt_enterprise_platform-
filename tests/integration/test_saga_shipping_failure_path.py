@@ -66,7 +66,7 @@ def test_saga_shipping_rejection_and_rollback_path(
                 master_state.finance_status == "ROLLED_BACK"
                 and master_state.notifications_status == "ROLLED_BACK"
             ):
-                assert master_state.shipping_status == "FAILED"
+                assert master_state.shipping_status == "LEGAL_REJECTION_MI"
 
                 assert shipping_row is not None
                 assert shipping_row.execution_status == "LEGAL_REJECTION_MI"

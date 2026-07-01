@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import pytest
 
-# Mock out the network and database connections *before* the application initializes [1.1]
 with (
     patch("confluent_kafka.Consumer"),
     patch("confluent_kafka.schema_registry.SchemaRegistryClient"),
@@ -25,18 +24,15 @@ def test_notifications_consumer_app_forwards_payload_and_action_to_graph(
     sample_payload = {"order_id": "notif-test-999", "customer_name": "Charlie"}
     sample_action = "CANCEL_TRANSACTION"
 
-    # Intercept the database session maker factory cleanly out-of-band [1.1]
     def mock_session_factory():
         return test_db_session
 
     with patch("notifications.app.init_notifications_db"):
         app = NotificationsConsumerApplication()
-        # Bind the application's local database session context to your test fixture [1.1]
         app.SessionLocal = mock_session_factory
 
         app.execute_business_logic(order_payload=sample_payload, action=sample_action)
 
-    # 🟢 SOLUTION: Verify that the app injected your database session directly into the graph config! [1.1]
     expected_config = {
         "configurable": {"thread_id": "notif-test-999", "db": test_db_session}
     }

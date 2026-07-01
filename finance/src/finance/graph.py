@@ -7,6 +7,13 @@ from langgraph.types import interrupt
 from opentelemetry import trace
 from typing_extensions import TypedDict
 
+from finance.constants import (
+    CREDIT_APPROVED,
+    CREDIT_LINE_RELEASED,
+    PAYMENT_REJECTED,
+    PENDING_HUMAN_REVIEW,
+    ROLLED_BACK,
+)
 from finance.db import (
     persist_financial_ledger_record,
     stage_finance_saga_reply,
@@ -76,14 +83,7 @@ def evaluate_financial_fraud_risk(
                 )
 
             persist_financial_ledger_record(
-                db, event.get("order_id"), ledger_status="PENDING_HUMAN_REVIEW"
-            )
-
-            stage_finance_saga_reply(
-                db,
-                order_id=event.get("order_id"),
-                wire_status="PENDING_HUMAN_REVIEW",
-                ledger_status="PENDING_HUMAN_REVIEW",
+                db, event.get("order_id"), ledger_status=PENDING_HUMAN_REVIEW
             )
 
             db.commit()
@@ -109,7 +109,7 @@ def evaluate_financial_fraud_risk(
                     db,
                     order_id=event.get("order_id"),
                     wire_status="SUCCESS",
-                    ledger_status="CREDIT_APPROVED",
+                    ledger_status=CREDIT_APPROVED,
                 )
                 return {"status": "PASSED_RISK_CHECKS", "order_event": event}
             else:
@@ -117,7 +117,7 @@ def evaluate_financial_fraud_risk(
                     db,
                     order_id=event.get("order_id"),
                     wire_status="FAILED",
-                    ledger_status="PAYMENT_REJECTED",
+                    ledger_status=PAYMENT_REJECTED,
                 )
                 return {"status": "TRIGGER_FRAUD_REJECTION", "order_event": event}
 
@@ -137,9 +137,9 @@ def execute_approval(state: FinanceState, config: RunnableConfig) -> Dict[str, A
                 "Execution Boundary Violation: No active database session mapped in configuration context."
             )
 
-        persist_financial_ledger_record(db, order_id, ledger_status="CREDIT_APPROVED")
+        persist_financial_ledger_record(db, order_id, ledger_status=CREDIT_APPROVED)
         stage_finance_saga_reply(
-            db, order_id, wire_status="SUCCESS", ledger_status="CREDIT_APPROVED"
+            db, order_id, wire_status="SUCCESS", ledger_status="SUCCESS"
         )
 
         return {"status": "COMPLETED", "order_event": event}
@@ -163,9 +163,9 @@ def execute_fraud_rejection(
                 "Execution Boundary Violation: No active database session mapped in configuration context."
             )
 
-        persist_financial_ledger_record(db, order_id, ledger_status="PAYMENT_REJECTED")
+        persist_financial_ledger_record(db, order_id, ledger_status=PAYMENT_REJECTED)
         stage_finance_saga_reply(
-            db, order_id, wire_status="FAILED", ledger_status="PAYMENT_REJECTED"
+            db, order_id, wire_status="FAILED", ledger_status=PAYMENT_REJECTED
         )
 
         return {"status": "COMPLETED", "order_event": event}
@@ -190,13 +190,13 @@ def execute_compensation_rollback(
             )
 
         persist_financial_ledger_record(
-            db, order_id, ledger_status="CREDIT_LINE_RELEASED"
+            db, order_id, ledger_status=CREDIT_LINE_RELEASED
         )
         stage_finance_saga_reply(
             db,
             order_id,
-            wire_status="ROLLED_BACK",
-            ledger_status="CREDIT_LINE_RELEASED",
+            wire_status="SUCCESS",
+            ledger_status=ROLLED_BACK,
         )
 
         return {"status": "COMPLETED", "order_event": event}

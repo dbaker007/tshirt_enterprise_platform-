@@ -2,13 +2,15 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
+from finance.constants import (
+    CREDIT_APPROVED,
+    CREDIT_LINE_RELEASED,
+)
 from finance.db import (
     FinanceLedger,
     persist_financial_ledger_record,
     stage_finance_saga_reply,
 )
-
-# 🟢 SOLUTION: Import the raw graph builder to compile a test-bound engine dynamically! [1.1]
 from finance.graph import builder
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
@@ -37,8 +39,6 @@ async def test_async_saver():
 async def test_no_fraud_detected_flow(test_async_saver, test_db_session):
     """Verifies that a compliant order under $200 executes cleanly without an interrupt hold."""
     order_id = "standard-clean-uuid-001"
-
-    # 🟢 SOLUTION: Compile a fresh test graph instance bound natively to your checkpointer! [1.1]
     test_graph_engine = builder.compile(checkpointer=test_async_saver)
 
     config = {
@@ -66,8 +66,6 @@ async def test_no_fraud_detected_flow(test_async_saver, test_db_session):
 async def test_fraud_detection_override_flow(test_async_saver, test_db_session):
     """Verifies that a high-amount order is paused by an interrupt and clears on approval."""
     order_id = "hitl-approve-uuid-002"
-
-    # 🟢 SOLUTION: Compile a fresh test graph instance bound natively to your checkpointer! [1.1]
     test_graph_engine = builder.compile(checkpointer=test_async_saver)
 
     config = {
@@ -99,8 +97,6 @@ async def test_fraud_detection_override_flow(test_async_saver, test_db_session):
 async def test_fraud_detection_resume_rejection_flow(test_async_saver, test_db_session):
     """Verifies that a high-amount order is paused and rejects when specified."""
     order_id = "hitl-reject-uuid-003"
-
-    # 🟢 SOLUTION: Compile a fresh test graph instance bound natively to your checkpointer! [1.1]
     test_graph_engine = builder.compile(checkpointer=test_async_saver)
 
     config = {
@@ -138,15 +134,15 @@ def test_database_and_orchestrator_contract_validity(test_db_session):
     db = test_db_session
     order_id = "saga-compliance-token-123"
 
-    persist_financial_ledger_record(db, order_id, ledger_status="CREDIT_APPROVED")
+    persist_financial_ledger_record(db, order_id, ledger_status=CREDIT_APPROVED)
     stage_finance_saga_reply(
-        db, order_id, wire_status="SUCCESS", ledger_status="CREDIT_APPROVED"
+        db, order_id, wire_status="SUCCESS", ledger_status="SUCCESS"
     )
     db.commit()
 
     ledger = db.query(FinanceLedger).filter(FinanceLedger.order_id == order_id).first()
     assert ledger is not None
-    assert ledger.execution_status == "CREDIT_APPROVED"
+    assert ledger.execution_status == CREDIT_APPROVED
 
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
@@ -158,8 +154,6 @@ def test_database_and_orchestrator_contract_validity(test_db_session):
 async def test_compensation_rollback_execution_flow(test_async_saver, test_db_session):
     """Verifies that a CANCEL_TRANSACTION action triggers immediate database rollbacks."""
     order_id = "compensation-trigger-999"
-
-    # 🟢 SOLUTION: Compile a fresh test graph instance bound natively to your checkpointer! [1.1]
     test_graph_engine = builder.compile(checkpointer=test_async_saver)
 
     config = {
@@ -187,7 +181,7 @@ async def test_compensation_rollback_execution_flow(test_async_saver, test_db_se
         .first()
     )
     assert ledger is not None
-    assert ledger.execution_status == "CREDIT_LINE_RELEASED"
+    assert ledger.execution_status == CREDIT_LINE_RELEASED
 
 
 def test_defensive_malformed_payload_fallbacks(test_db_session):

@@ -4,6 +4,7 @@ from datetime import datetime
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from observability.outbox import stage_outbox_message
 from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Session
 
 
@@ -30,9 +31,6 @@ async def get_shipping_checkpointer() -> AsyncSqliteSaver:
         "SHIPPING_CHECKPOINT_DB_PATH", "shipping_checkpoints.sqlite"
     )
     return AsyncSqliteSaver.from_conn_string(checkpoint_db_path)
-
-
-from sqlalchemy.exc import IntegrityError
 
 
 def persist_shipping_ledger_record(
@@ -67,21 +65,17 @@ def stage_shipping_saga_reply(
     order_id: str,
     wire_status: str,
     ledger_status: str,
-    reason_text: str = None,
 ) -> None:
     """Stateless data access worker.
 
     Packages the standardized saga contract and routes it into the central platform outbox.
     """
-    safe_reason = (
-        reason_text if reason_text else f"Logistics event recorded as: {ledger_status}"
-    )
 
     reply_envelope = {
         "order_id": str(order_id),
         "department": "SHIPPING",
         "status": str(wire_status),
-        "reason": str(safe_reason),
+        "ledger_status": str(ledger_status),
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 

@@ -12,10 +12,14 @@ COPY sales/pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r pyproject.toml
 
-# 🟢 SOLUTION: Copy the overarching source package tree to capture all submodules uniformly!
+# Copy the overarching source package tree to capture all submodules uniformly!
 COPY sales/src/sales /platform_app/sales
 COPY observability/src/observability /platform_app/observability
-# 🟢 SOLUTION: Explicitly mount the platform root to resolve parent namespace exploration tracks
+
+# 🟢 SOLUTION: Sideload the decoupled asset tree straight into the active work directory namespace!
+COPY ui /platform_app/ui
+
+# Explicitly mount the platform root to resolve parent namespace exploration tracks
 ENV PYTHONPATH="/platform_app"
 ENV PYTHONUNBUFFERED=1
 

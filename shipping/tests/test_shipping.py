@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy import text
 
-# Mock out network layers and database discovery *before* application evaluation [1.1]
 with (
     patch("confluent_kafka.Consumer"),
     patch("confluent_kafka.schema_registry.SchemaRegistryClient", create=True),
@@ -15,6 +14,13 @@ with (
     ),
 ):
     from shipping.app import ShippingConsumerApplication
+    from shipping.constants import (
+        FREIGHT_ROUTE_RELEASED,
+        LEGAL_REJECTION_MI,
+        ROLLED_BACK,
+        SHIPMENT_SECURED,
+        SUCCESS,
+    )
     from shipping.db import (
         ShippingLedger,
         persist_shipping_ledger_record,
@@ -34,10 +40,9 @@ def test_shipping_consumer_app_forwards_payload_and_action_to_graph(
 ):
     """Verifies that the parent application wrapper accurately initializes and forwards
 
-    both the event data and action context into the LangGraph engine on ingestion loops [1.1].
+    both the event data and action context into the LangGraph engine on ingestion loops.
     """
 
-    # Intercept the local session maker to run against your testing RAM database context [1.1]
     def mock_session_factory():
         return test_db_session
 
@@ -53,7 +58,6 @@ def test_shipping_consumer_app_forwards_payload_and_action_to_graph(
 
         app.execute_business_logic(order_payload=sample_payload, action=sample_action)
 
-    # Verify that your database session context was dynamically injected into the config [1.1]
     expected_config = {
         "configurable": {"thread_id": "ship-test-999", "db": test_db_session}
     }
@@ -76,8 +80,6 @@ def test_shipping_consumer_app_forwards_payload_and_action_to_graph(
 def test_shipping_graph_clears_standard_geography_green(test_db_session):
     """Verifies that standard geographical locations route successfully to fulfillment nodes."""
     payload = {"order_id": "ship-uuid-001", "shipping_address": {"state": "OH"}}
-
-    # 🟢 SOLUTION: Pass the test database session explicitly via configuration mapping [1.1]
     config = {"configurable": {"thread_id": "ship-uuid-001", "db": test_db_session}}
 
     result = shipping_graph_engine.invoke(
@@ -91,7 +93,6 @@ def test_shipping_graph_clears_standard_geography_green(test_db_session):
 def test_shipping_graph_catches_michigan_compliance_hold(test_db_session):
     """Verifies that shipping addresses inside Michigan are intercepted and rejected natively."""
     payload = {"order_id": "ship-violation-101", "shipping_address": {"state": "MI"}}
-
     config = {
         "configurable": {"thread_id": "ship-violation-101", "db": test_db_session}
     }
@@ -106,7 +107,6 @@ def test_shipping_graph_catches_michigan_compliance_hold(test_db_session):
 def test_shipping_graph_triggers_compensation_rollback_on_cancel(test_db_session):
     """Verifies that a CANCEL_TRANSACTION action directive routes straight to rollback logic."""
     payload = {"order_id": "ship-cancel-202"}
-
     config = {"configurable": {"thread_id": "ship-cancel-202", "db": test_db_session}}
 
     result = shipping_graph_engine.invoke(
@@ -128,15 +128,13 @@ def test_database_persistence_and_orchestrator_payload_contract(test_db_session)
     """
     db = test_db_session
     order_id = "ship-compliance-999"
-    reason_txt = "Freight routes successfully locked on carrier schedule."
 
-    persist_shipping_ledger_record(db, order_id, ledger_status="SHIPMENT_SECURED")
+    persist_shipping_ledger_record(db, order_id, ledger_status=SHIPMENT_SECURED)
     stage_shipping_saga_reply(
         db=db,
         order_id=order_id,
         wire_status="SUCCESS",
-        ledger_status="SHIPMENT_SECURED",
-        reason_text=reason_txt,
+        ledger_status=SUCCESS,
     )
     db.commit()
 
@@ -146,7 +144,7 @@ def test_database_persistence_and_orchestrator_payload_contract(test_db_session)
         .first()
     )
     assert ledger is not None
-    assert ledger.execution_status == "SHIPMENT_SECURED"
+    assert ledger.execution_status == SHIPMENT_SECURED
 
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
@@ -154,7 +152,7 @@ def test_database_persistence_and_orchestrator_payload_contract(test_db_session)
 
     parsed_payload = json.loads(outbox.payload)
     assert parsed_payload["status"] == "SUCCESS"
-    assert parsed_payload["reason"] == reason_txt
+    assert parsed_payload["ledger_status"] == SUCCESS
 
 
 def test_compensation_rollback_writes_failure_control_signal_correctly(test_db_session):
@@ -164,17 +162,13 @@ def test_compensation_rollback_writes_failure_control_signal_correctly(test_db_s
     """
     db = test_db_session
     order_id = "ship-failure-111"
-    reason_txt = (
-        "Legal distribution constraint prohibits shirt logistics inside Michigan."
-    )
 
-    persist_shipping_ledger_record(db, order_id, ledger_status="LEGAL_REJECTION_MI")
+    persist_shipping_ledger_record(db, order_id, ledger_status=LEGAL_REJECTION_MI)
     stage_shipping_saga_reply(
         db=db,
         order_id=order_id,
         wire_status="FAILED",
-        ledger_status="LEGAL_REJECTION_MI",
-        reason_text=reason_txt,
+        ledger_status=LEGAL_REJECTION_MI,
     )
     db.commit()
 
@@ -184,14 +178,14 @@ def test_compensation_rollback_writes_failure_control_signal_correctly(test_db_s
         .first()
     )
     assert ledger is not None
-    assert ledger.execution_status == "LEGAL_REJECTION_MI"
+    assert ledger.execution_status == LEGAL_REJECTION_MI
 
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
 
     parsed_payload = json.loads(outbox.payload)
     assert parsed_payload["status"] == "FAILED"
-    assert parsed_payload["reason"] == reason_txt
+    assert parsed_payload["ledger_status"] == LEGAL_REJECTION_MI
 
 
 def test_database_persistence_and_universal_outbox_mirror(test_db_session):
@@ -199,13 +193,12 @@ def test_database_persistence_and_universal_outbox_mirror(test_db_session):
     db = test_db_session
     order_id = "ship-compliance-999"
 
-    persist_shipping_ledger_record(db, order_id, ledger_status="SHIPMENT_SECURED")
+    persist_shipping_ledger_record(db, order_id, ledger_status=SHIPMENT_SECURED)
     stage_shipping_saga_reply(
         db=db,
         order_id=order_id,
         wire_status="SUCCESS",
-        ledger_status="SHIPMENT_SECURED",
-        reason_text="Test tracking validation",
+        ledger_status=SUCCESS,
     )
     db.commit()
 
@@ -215,7 +208,7 @@ def test_database_persistence_and_universal_outbox_mirror(test_db_session):
         .first()
     )
     assert ledger is not None
-    assert ledger.execution_status == "SHIPMENT_SECURED"
+    assert ledger.execution_status == SHIPMENT_SECURED
 
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None

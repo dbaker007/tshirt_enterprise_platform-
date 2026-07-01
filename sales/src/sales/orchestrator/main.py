@@ -119,7 +119,10 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
         with tracer.start_as_current_span("process_incoming_saga_reply") as span:
             order_id = reply.get("order_id")
             dept = reply.get("department")
-            status = reply.get("status")
+            status = reply.get("status")  # Binary Indicator: "SUCCESS" or "FAILED"
+            ledger_status = reply.get(
+                "ledger_status"
+            )  # Descriptive Status: "FAILED_LEGAL", "SUCCESS", "ROLLED_BACK"
 
             state = db.query(SagaState).filter(SagaState.order_id == order_id).first()
             if not state:
@@ -133,18 +136,18 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
             span.set_attribute("worker.status_outcome", str(status))
 
             self.logger.info(
-                f"Evaluating Status Reply | Department: {dept} | Outcome: {status} | Order: {order_id}"
+                f"Evaluating Status Reply | Department: {dept} | Wire Status: {status} | Ledger Status: {ledger_status} | Order: {order_id}"
             )
 
-            # 🟢 STEP 1: Direct Mapping - Set the department status exactly to the wire status passed in
+            # 🟢 STEP 1: Direct Mapping - Blindly stamp the descriptive ledger_status value passed in
             if dept == "FINANCE":
-                state.finance_status = status
+                state.finance_status = ledger_status
             elif dept == "SHIPPING":
-                state.shipping_status = status
+                state.shipping_status = ledger_status
             elif dept == "NOTIFICATIONS":
-                state.notifications_status = status
+                state.notifications_status = ledger_status
 
-            # 🟢 STEP 2: Failure Evaluation & Idempotent Compensation Management
+            # 🟢 STEP 2: Failure Evaluation - Evaluates the strict binary indicator to run compensations
             if status == "FAILED":
                 if state.saga_status != "REJECTED":
                     state.saga_status = "REJECTED"
@@ -159,7 +162,7 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
                         f"🔄 Compensation already in flight or executed for Order {order_id}. Skipping duplicate trigger."
                     )
 
-            # 🟢 STEP 3: Forward Success Boundary Evaluation
+            # 🟢 STEP 3: Forward Success Boundary Evaluation - Checks for uniform cross-domain success string tokens
             elif (
                 state.saga_status == "STARTED"
                 and state.finance_status == "SUCCESS"

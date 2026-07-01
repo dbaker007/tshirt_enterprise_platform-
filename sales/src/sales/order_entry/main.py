@@ -21,6 +21,8 @@ from sales.shared_models import SagaState
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from ui.ui_server import mount_static_assets, ui_router
+
 # CRITICAL BEST PRACTICE: Execute tracer hooking globally at the file root level
 tracer = initialize_tracer()
 
@@ -60,7 +62,6 @@ FastAPIInstrumentor.instrument_app(app)
 # =========================================================================
 # FORWARD CHECKOUT ROADWAY ROUTE
 # =========================================================================
-@app.post("/sales/")
 @app.post("/sales/")
 async def create_sale(transaction: dict):
     """Public gateway checkout checkpoint for handling consumer order payloads."""
@@ -262,3 +263,15 @@ async def override_sale(verdict_payload: dict):
             )
         finally:
             db.close()
+
+
+# =========================================================================
+# 🟢 MOUNT COOPERATIVE DECOUPLED FRONTEND VIEW ENGINE
+# =========================================================================
+
+
+# 1. Register the asset folder mapping dynamically onto the global application
+mount_static_assets(app)
+
+# 2. Append the decoupled template routes
+app.include_router(ui_router)

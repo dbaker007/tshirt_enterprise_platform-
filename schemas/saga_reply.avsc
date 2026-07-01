@@ -7,7 +7,7 @@
     { "name": "order_id", "type": "string", "doc": "The master transaction tracking UUID string" },
     { "name": "department", "type": "string", "doc": "The reporting department signature token (e.g., FINANCE or SHIPPING)" },
     { "name": "status", "type": "string", "doc": "The outcome state flag string (e.g., SUCCESS or FAILED)" },
-    { "name": "reason", "type": "string", "doc": "Optional metadata description text block describing failure conditions" },
+    { "name": "ledger_status", "type": "string", "doc": "Descriptive status tracking semantic milestone states" },
     { "name": "timestamp", "type": "string", "doc": "ISO-8601 string tracking when the worker saved the record" }
   ]
 }

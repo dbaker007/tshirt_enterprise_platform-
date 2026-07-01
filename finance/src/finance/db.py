@@ -70,7 +70,7 @@ def stage_finance_saga_reply(
         "order_id": str(order_id),
         "department": "FINANCE",
         "status": str(wire_status),
-        "reason": f"Financial clearance status evaluated as: {ledger_status}",
+        "ledger_status": str(ledger_status),
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 

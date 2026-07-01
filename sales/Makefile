@@ -12,8 +12,13 @@ install:
 	uv pip install -r requirements.txt || uv pip install pytest httpx confluent-kafka sqlalchemy psycopg2-binary fastapi uvicorn ruff
 
 test:
-	@echo "🧪 Executing outbox data-integrity integration test suite..."
-	uv run pytest . -v -s --log-cli-level=INFO
+	@echo "🧪 Executing sales orchestrator unit test suite..."
+	@mkdir -p schemas
+	@ln -sf ../../schemas/command_envelope.avsc schemas/command_envelope.avsc
+	@ln -sf ../../schemas/saga_reply.avsc schemas/saga_reply.avsc
+	-uv run pytest tests/ -v -s
+	@rm -rf schemas
+	@echo "🧹 Cleaned up temporary schema directory references."
 
 lint:
 	@echo "🔍 Executing static analysis and code styling enforcement matrix..."

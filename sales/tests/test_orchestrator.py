@@ -3,7 +3,6 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import text
 
-# Intercept network layers and database discovery *before* application evaluation
 with (
     patch("confluent_kafka.Consumer"),
     patch("confluent_kafka.schema_registry.SchemaRegistryClient", create=True),
@@ -25,7 +24,6 @@ def test_orchestrator_advances_to_in_transit_on_complete_success_matrix(
     db = test_sales_ram_session
     order_id = "saga-test-uuid-001"
 
-    # 🟢 SOLUTION: Explicitly seed columns to satisfy your shared models structure!
     running_saga = SagaState(
         order_id=order_id,
         saga_status="STARTED",
@@ -43,15 +41,31 @@ def test_orchestrator_advances_to_in_transit_on_complete_success_matrix(
     with patch("sales.orchestrator.main.init_orchestrator_db"):
         app = SalesSagaOrchestratorApplication()
 
-        # Pass the test database session explicitly via parameter injection!
         app.process_incoming_saga_reply(
-            {"order_id": order_id, "department": "FINANCE", "status": "SUCCESS"}, db=db
+            {
+                "order_id": order_id,
+                "department": "FINANCE",
+                "status": "SUCCESS",
+                "ledger_status": "SUCCESS",
+            },
+            db=db,
         )
         app.process_incoming_saga_reply(
-            {"order_id": order_id, "department": "SHIPPING", "status": "SUCCESS"}, db=db
+            {
+                "order_id": order_id,
+                "department": "SHIPPING",
+                "status": "SUCCESS",
+                "ledger_status": "SUCCESS",
+            },
+            db=db,
         )
         app.process_incoming_saga_reply(
-            {"order_id": order_id, "department": "NOTIFICATIONS", "status": "SUCCESS"},
+            {
+                "order_id": order_id,
+                "department": "NOTIFICATIONS",
+                "status": "SUCCESS",
+                "ledger_status": "SUCCESS",
+            },
             db=db,
         )
         db.commit()
@@ -68,7 +82,6 @@ def test_orchestrator_triggers_rollbacks_on_worker_failure(test_sales_ram_sessio
     db = test_sales_ram_session
     order_id = "saga-failure-uuid-999"
 
-    # 🟢 SOLUTION: Explicitly seed columns to satisfy your shared models structure!
     running_saga = SagaState(
         order_id=order_id,
         saga_status="STARTED",
@@ -86,14 +99,20 @@ def test_orchestrator_triggers_rollbacks_on_worker_failure(test_sales_ram_sessio
     with patch("sales.orchestrator.main.init_orchestrator_db"):
         app = SalesSagaOrchestratorApplication()
 
-        # Pass the test database session explicitly via parameter injection!
         app.process_incoming_saga_reply(
-            {"order_id": order_id, "department": "SHIPPING", "status": "FAILED"}, db=db
+            {
+                "order_id": order_id,
+                "department": "SHIPPING",
+                "status": "FAILED",
+                "ledger_status": "LEGAL_REJECTION_MI",
+            },
+            db=db,
         )
         db.commit()
 
     updated_saga = db.query(SagaState).filter(SagaState.order_id == order_id).first()
     assert updated_saga.saga_status == "REJECTED"
+    assert updated_saga.shipping_status == "LEGAL_REJECTION_MI"
 
     outbox_count = db.execute(text("SELECT count(*) FROM platform_outbox;")).scalar()
     assert outbox_count == 2

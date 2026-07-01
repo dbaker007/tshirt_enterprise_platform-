@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import time
 import uuid
@@ -11,30 +12,65 @@ import httpx
 TARGET_GATEWAY_URL = os.getenv("SALES_API_URL", "http://localhost:8000/sales/")
 TRIGGER_MODE = os.getenv("SIMULATION_TRIGGER_MODE", "SUCCESS").upper()
 
+# Whitelisted array of names for rich database and frontend dashboard visualization
+BUYER_NAMES_POOL = [
+    "Bob Vance",
+    "Phyllis Vance",
+    "Michael Scott",
+    "Jim Halpert",
+    "Pam Beesly",
+    "Dwight Schrute",
+    "Angela Martin",
+    "Oscar Martinez",
+    "Kevin Malone",
+    "Stanley Hudson",
+    "Creed Bratton",
+    "Kelly Kapoor",
+    "Ryan Howard",
+    "Toby Flenderson",
+    "Darryl Philbin",
+    "Andy Bernard",
+]
+
+# Strategic US States pool including Kentucky (KY) to support your upcoming tool-calling feature
+US_STATES_POOL = ["OH", "PA", "NY", "IL", "IN", "KY", "TN", "WV", "CA", "TX", "FL"]
+
 
 def generate_base_payload(mode: str) -> dict:
-    """Generates order payload contexts dynamically based on the requested failure mode."""
-    # Default Clean Base: Standard approved parameters ($45.99, Ohio shipping)
-    order_amount = 45.99
-    shipping_state = "OH"
-    buyer_name = "Bob Vance"
-    buyer_email = f"bob-{uuid.uuid4().hex[:6]}@vanceair.com"
+    """Generates order payload contexts dynamically with realistic, randomized distributions."""
+    buyer_name = random.choice(BUYER_NAMES_POOL)
+
+    # Generate clean, unique, domain-valid matching email targets
+    email_prefix = buyer_name.lower().replace(" ", "-")
+    buyer_email = f"{email_prefix}-{uuid.uuid4().hex[:4]}@vanceair.com"
 
     if mode == "FAIL_FINANCE":
-        # Over $200 forces a hard fraud rejection breach inside the Finance shard
-        order_amount = 250.75
-        buyer_name = "Risky Buyer"
+        # Simulate variable fraud hold thresholds: price ranges randomly between $201.00 and $550.00
+        order_amount = round(random.uniform(201.00, 550.00), 2)
+        shipping_state = random.choice(US_STATES_POOL)
 
     elif mode == "FAIL_SHIPPING":
-        # Shipping to Michigan (MI) triggers a hard compliance constraint block
+        # Simulate standard compliance rejections: strict block against Michigan delivery routes
+        order_amount = round(random.uniform(15.00, 195.00), 2)
         shipping_state = "MI"
-        buyer_name = "Michigan Buyer"
+
+    else:
+        # Standard Success Path: price ranges randomly between $10.00 and $199.99
+        order_amount = round(random.uniform(10.00, 199.99), 2)
+        shipping_state = random.choice(US_STATES_POOL)
 
     return {
         "amount": order_amount,
-        "item_id": "SHIRT_PREMIUM_RED",
+        "item_id": random.choice(
+            ["SHIRT_PREMIUM_RED", "SHIRT_ULTRA_LUXURY", "SHIRT_STANDARD_BLUE"]
+        ),
         "customer": {"name": buyer_name, "email": buyer_email},
-        "shipping_address": {"state": shipping_state},
+        "shipping_address": {
+            "street": f"{random.randint(100, 9999)} Transaction Way",
+            "city": "Metropolis",
+            "state": shipping_state,
+            "postal_code": f"{random.randint(10000, 99999)}",
+        },
     }
 
 
@@ -47,7 +83,7 @@ def dispatch_single_order(mode_override: str = None) -> bool:
     payload = generate_base_payload(active_mode)
 
     print(
-        f"📡 [DISPATCHING]: Mode: [{active_mode}] | Amount: ${payload['amount']} | State: {payload['shipping_address']['state']}"
+        f"📡 [DISPATCHING]: Mode: [{active_mode}] | Name: {payload['customer']['name']} | Amount: ${payload['amount']} | State: {payload['shipping_address']['state']}"
     )
 
     try:
@@ -74,7 +110,7 @@ def dispatch_single_order(mode_override: str = None) -> bool:
 
 
 def execute_high_volume_stress_load():
-    """Concurrently loops and alternates scenarios back-to-back to generate an organic, balanced ledger slate."""
+    """Concurrently loops and alternates scenarios back-to-back to generate an organic, balanced slate."""
     print(
         f"📈 [STRESS TESTBENCH]: Spawning 100 concurrent transactional orders against gateway..."
     )
@@ -84,6 +120,9 @@ def execute_high_volume_stress_load():
 
     # Generate an organic mix: 80% Success, 10% Finance Failures, 10% Shipping Failures
     simulation_mix = ["SUCCESS"] * 80 + ["FAIL_FINANCE"] * 10 + ["FAIL_SHIPPING"] * 10
+
+    # Shuffle the list to simulate randomized real-world user traffic patterns
+    random.shuffle(simulation_mix)
 
     start_time = time.time()
 

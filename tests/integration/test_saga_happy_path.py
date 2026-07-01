@@ -16,8 +16,8 @@ def test_saga_happy_path_execution(
     notifications_db_session,
 ):
     """INTEGRATION TEST: Verifies that an order under $200 successfully clears
-
-    all downstream microservice checklists and transitions to IN_TRANSIT.
+    all downstream microservice checklists and transitions to IN_TRANSIT,
+    conforming directly to the new ledger_status contract data pattern.
     """
     checkout_payload = {
         "item_id": "SHIRT_PREMIUM_RED",
@@ -62,10 +62,13 @@ def test_saga_happy_path_execution(
         )
 
         if master_state and master_state.saga_status == "IN_TRANSIT":
+            # 🟢 NEW SAGA PATTERN: The orchestrator stamps the literal values passed by the workers
             assert master_state.finance_status == "SUCCESS"
             assert master_state.shipping_status == "SUCCESS"
+            # Adjust this to match your notification worker's new ledger_status value if it differs from "SUCCESS"
             assert master_state.notifications_status == "SUCCESS"
 
+            # Cross-assert that private database shards accurately record local execution states
             assert finance_row is not None
             assert finance_row.execution_status == "CREDIT_APPROVED"
 
@@ -73,6 +76,7 @@ def test_saga_happy_path_execution(
             assert shipping_row.execution_status == "SHIPMENT_SECURED"
 
             assert notifications_row is not None
+            # Adjust this to match your notification worker's private database string constant
             assert notifications_row.execution_status == "NOTIFICATION_SENT"
 
             saga_cleared = True

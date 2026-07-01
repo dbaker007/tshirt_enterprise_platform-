@@ -6,6 +6,13 @@ from langgraph.graph import END, START, StateGraph
 from opentelemetry import trace
 from typing_extensions import TypedDict
 
+from shipping.constants import (
+    FREIGHT_ROUTE_RELEASED,
+    LEGAL_REJECTION_MI,
+    ROLLED_BACK,
+    SHIPMENT_SECURED,
+    SUCCESS,
+)
 from shipping.db import (
     persist_shipping_ledger_record,
     stage_shipping_saga_reply,
@@ -80,13 +87,9 @@ def execute_fulfillment(state: ShippingState, config: RunnableConfig) -> Dict[st
                 "Execution Boundary Violation: No active database session mapped in configuration context."
             )
 
-        persist_shipping_ledger_record(db, order_id, ledger_status="SHIPMENT_SECURED")
+        persist_shipping_ledger_record(db, order_id, ledger_status=SHIPMENT_SECURED)
         stage_shipping_saga_reply(
-            db=db,
-            order_id=order_id,
-            wire_status="SUCCESS",
-            ledger_status="SHIPMENT_SECURED",
-            reason_text="Fulfillment cleared: Shipping route successfully locked on carrier schedule.",
+            db=db, order_id=order_id, wire_status=SUCCESS, ledger_status=SUCCESS
         )
 
         return {"status": "COMPLETED", "order_event": event}
@@ -115,13 +118,12 @@ def execute_legal_rejection(
                 "Execution Boundary Violation: No active database session mapped in configuration context."
             )
 
-        persist_shipping_ledger_record(db, order_id, ledger_status="LEGAL_REJECTION_MI")
+        persist_shipping_ledger_record(db, order_id, ledger_status=LEGAL_REJECTION_MI)
         stage_shipping_saga_reply(
             db=db,
             order_id=order_id,
             wire_status="FAILED",
-            ledger_status="LEGAL_REJECTION_MI",
-            reason_text="Fulfillment Aborted: Legal distribution constraint prohibits shirt logistics inside Michigan.",
+            ledger_status=LEGAL_REJECTION_MI,
         )
 
         return {"status": "COMPLETED", "order_event": event}
@@ -145,14 +147,13 @@ def execute_compensation_rollback(
             )
 
         persist_shipping_ledger_record(
-            db, order_id, ledger_status="FREIGHT_ROUTE_RELEASED"
+            db, order_id, ledger_status=FREIGHT_ROUTE_RELEASED
         )
         stage_shipping_saga_reply(
             db=db,
             order_id=order_id,
-            wire_status="ROLLED_BACK",
-            ledger_status="FREIGHT_ROUTE_RELEASED",
-            reason_text="Compensation rollback completed: Logistics inventory returned to open queue pools.",
+            wire_status="SUCCESS",
+            ledger_status=ROLLED_BACK,
         )
 
         return {"status": "COMPLETED", "order_event": event}

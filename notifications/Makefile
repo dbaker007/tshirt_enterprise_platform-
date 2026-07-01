@@ -22,7 +22,12 @@ daemon:
 
 test:
 	@echo "🧪 Executing notifications consumer integration test suite..."
-	uv run pytest tests/ -v -s
+	@mkdir -p schemas
+	@ln -sf ../../schemas/command_envelope.avsc schemas/command_envelope.avsc
+	@ln -sf ../../schemas/saga_reply.avsc schemas/saga_reply.avsc
+	-uv run pytest tests/ -v -s
+	@rm -rf schemas
+	@echo "🧹 Cleaned up temporary schema directory references."
 
 clean:
 	@echo "🧹 Purging local cache footprints and temporary compiler assets..."

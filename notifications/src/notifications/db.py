@@ -1,8 +1,8 @@
-import os
 from datetime import datetime
 
 from observability.outbox import stage_outbox_message
 from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Session
 
 
@@ -22,9 +22,6 @@ class CommunicationLedger(Base):
 def init_notifications_db(engine) -> None:
     """Binds and maps the core relational schema definitions straight onto the provided engine runtime context."""
     Base.metadata.create_all(bind=engine)
-
-
-from sqlalchemy.exc import IntegrityError
 
 
 def persist_communication_ledger_record(
@@ -69,7 +66,7 @@ def stage_notifications_saga_reply(
         "order_id": str(order_id),
         "department": "NOTIFICATIONS",
         "status": str(wire_status),
-        "reason": f"Customer alert notification recorded as: {ledger_status}",
+        "ledger_status": str(ledger_status),
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
