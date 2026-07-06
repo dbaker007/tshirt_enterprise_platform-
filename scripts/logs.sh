@@ -9,7 +9,7 @@ NAMESPACE="explorer-zone"
 
 if [ -z "$SERVICE" ]; then
     echo "❌ [ERROR]: Please specify a microservice or infrastructure component name handle."
-    echo "📊 Usage: ./scripts/logs.sh <sales-api|orchestrator|shipping|finance|notifications|daemons|postgres|kafka|jaeger|migrator>"
+    echo "📊 Usage: ./scripts/logs.sh <sales-api|orchestrator|shipping|finance|finance-api|ops-agent|daemons|postgres|kafka|jaeger|migrator>"
     exit 1
 fi
 
@@ -39,12 +39,26 @@ case "$SERVICE" in
         LOCAL_FILE="finance_api.log"
         KUBE_DEPLOY="finance-service"
         ;;
+        
+    # 🟢 SOLUTION: Map the fresh independent programmatic Finance Web API process and containers! [1.1]
+    finance-api|finance-web)
+        LOCAL_MATCH="finance.web"
+        LOCAL_FILE="finance_api.log"
+        KUBE_DEPLOY="finance-api"
+        ;;
+        
+    # 🟢 SOLUTION: Map your upcoming Operations Automation Agent process and container infrastructure! [1.1]
+    ops-agent|agent|ops)
+        LOCAL_MATCH="ops_agent.main"
+        LOCAL_FILE="ops_agent.log"
+        KUBE_DEPLOY="ops-agent"
+        ;;
+        
     notifications)
         LOCAL_MATCH="notifications.app"
         LOCAL_FILE="notifications_app.log"
         KUBE_DEPLOY="notifications-service"
         ;;
-    # 🟢 FIXED: Explicitly maps 'daemons' or 'daemon' to the platform outbox processor!
     outbox|daemon|daemons)
         LOCAL_MATCH="outbox_daemon"
         LOCAL_FILE="outbox_daemon.log"

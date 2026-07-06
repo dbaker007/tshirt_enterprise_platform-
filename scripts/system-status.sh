@@ -28,23 +28,23 @@ check_kube_deployment() {
     DEPLOY=$2
     LABEL_SELECTOR=$3
     
-    # 🟢 FIX: Explicitly target the first item and container index elements using [0] array syntax [1.1]
+    # Explicitly target the first item and container index elements using [0] array syntax
     START_TIME=$(kubectl get pods -n explorer-zone -l "$LABEL_SELECTOR" -o jsonpath='{.items[0].status.containerStatuses[0].state.running.startedAt}' 2>/dev/null || echo "")
     
     if [ -n "$START_TIME" ] && [ "$START_TIME" != "" ]; then
-        # 1. Parse out the ISO hour and minute strings directly using standard text slicing [1.1]
+        # 1. Parse out the ISO hour and minute strings directly using standard text slicing
         # Example input: "2026-06-23T12:06:52Z" -> Extracts "12" and "06"
         POD_HR=$(echo "$START_TIME" | cut -d'T' -f2 | cut -d':' -f1)
         POD_MIN=$(echo "$START_TIME" | cut -d':' -f2)
         
-        # 2. Grab the current system UTC hour and minute text strings natively [1.1]
+        # 2. Grab the current system UTC hour and minute text strings natively
         SYS_HR=$(date -u +%H)
         SYS_MIN=$(date -u +%M)
         
-        # 3. Calculate absolute elapsed duration values cleanly [1.1]
+        # 3. Calculate absolute elapsed duration values cleanly
         DIFF_MIN=$(( (10#$SYS_HR * 60 + 10#$SYS_MIN) - (10#$POD_HR * 60 + 10#$POD_MIN) ))
         
-        # Guard against day-boundary rollovers safely [1.1]
+        # Guard against day-boundary rollovers safely
         if [ "$DIFF_MIN" -lt 0 ]; then
             DIFF_MIN=$(( DIFF_MIN + 1440 ))
         fi
@@ -114,28 +114,31 @@ check_port_forward() {
 # ⚙️ SYSTEM INSPECTION SWEEPS TRACKS
 # =========================================================================
 
-# 1. Evaluate Core Infrastructure Layer Foundation Shards (🟢 FIX: Explicit true pod labels passed!) [1.1]
+# 1. Evaluate Core Infrastructure Layer Foundation Shards (Explicit true pod labels passed!)
 check_kube_deployment "Postgres Database Shard" "postgres-db" "app=postgres-ledger"
 check_kube_deployment "Apache Kafka KRaft Broker" "enterprise-kafka-broker" "app=enterprise-kafka-broker"
 check_kube_deployment "Jaeger Telemetry Core" "jaeger" "app=jaeger"
 
-# 2. Evaluate Cluster Application Process Fabric Shards (🟢 FIX: Explicit true pod labels passed!) [1.1]
+# 2. Evaluate Cluster Application Process Fabric Shards (Explicit true pod labels passed!)
 check_kube_deployment "Sales Order Entry API" "sales-order-entry" "app=sales-order-entry"
 check_kube_deployment "Sales Saga Orchestrator" "sales-saga-orchestrator" "app=sales-saga-orchestrator"
-check_kube_deployment "Shipping Consumer Worker" "shipping-service" "app=shipping-service"
-check_kube_deployment "Finance Consumer Worker" "finance-service" "app=finance-service"
-check_kube_deployment "Notifications Consumer Worker" "notifications-service" "app=notifications-service"
+check_kube_deployment "Shipping Worker" "shipping-service" "app=shipping-service"
+check_kube_deployment "Finance Worker" "finance-service" "app=finance-service"
+check_kube_deployment "Finance Data Shard API" "finance-api" "app=finance-api"
+check_kube_deployment "Notifications Worker" "notifications-service" "app=notifications-service"
 check_kube_deployment "Universal Outbox Daemon" "outbox-daemon" "app=outbox-daemon"
+check_kube_deployment "AI Operations Agent" "ops-agent" "app=ops-agent"
 
 echo "--------------------------------------------------------------------------------="
 
 # 3. Evaluate Local Host Python Microservice Consumer Threads
 check_local_process "Sales Order Entry API" "sales.order_entry.main:app"
 check_local_process "Sales Saga Orchestrator" "sales.orchestrator.main"
-check_local_process "Shipping Consumer Worker" "shipping.app"
+check_local_process "Local Shipping Service" "shipping.app"
 check_local_process "Local Finance Service" "finance.app"
+check_local_process "Local Finance Shard API" "finance.web"
 check_local_process "Local Notifications Service" "notifications.app"
-
+check_local_process "Local Ops Agent Engine" "ops_agent.main"
 
 echo "--------------------------------------------------------------------------------="
 
@@ -144,6 +147,11 @@ check_port_forward "5432" "Postgres Bridge" "Postgres Database Shard"
 check_port_forward "9092" "Kafka Broker Bridge" "Apache Kafka KRaft Broker"
 check_port_forward "8081" "Schema Registry Bridge" "Confluent Schema Registry"
 check_port_forward "8000" "FastAPI Bridge" "Sales Order Entry API"
+check_port_forward "8005" "Ops Agent Engine Bridge" "AI Operations Agent"
+
+# 🟢 SOLUTION: Inject your independent hardware port tunnel check onto port 8001! [1.1]
+check_port_forward "8001" "Finance Data API Bridge" "Finance Data Shard API"
+
 check_port_forward "16686" "Jaeger Dashboard Bridge" "Jaeger Telemetry Core"
 check_port_forward "4318" "Jaeger OTLP Bridge" "Jaeger OTLP Core"
 echo "================================================================================="

@@ -42,7 +42,7 @@ async def get_pending_fraud_reviews():
     """Queries the localized finance database shard directly to rehydrate live fraud review dashboard card elements [1.1]."""
     db = SessionLocal()
     try:
-        # 1. 🟢 SOLUTION: Target the physical finance shard ledger rows to harvest active human holds [1.1]
+        # 1. Target the physical finance shard ledger rows to harvest active human holds [1.1]
         from sqlalchemy import text
 
         shard_rows = db.execute(
@@ -57,9 +57,12 @@ async def get_pending_fraud_reviews():
         if not pending_order_ids:
             return []
 
-        # 2. 🟢 SOLUTION: Cross-reference those active order IDs back against your saga metadata logs to populate details [1.1]
+        # 2. Cross-reference those active order IDs back against your saga metadata logs to populate details [1.1]
         records = (
-            db.query(SagaState).filter(SagaState.order_id.in_(pending_order_ids)).all()
+            db.query(SagaState)
+            .filter(SagaState.order_id.in_(pending_order_ids))
+            .order_by(SagaState.created_at.desc())
+            .all()
         )
 
         payload_list = []
@@ -73,6 +76,12 @@ async def get_pending_fraud_reviews():
                     ),
                     "amount": float(getattr(row, "amount", 0.0)),
                     "item_id": getattr(row, "item_id", "UNKNOWN_ITEM"),
+                    "shipping_address": {
+                        "street": getattr(row, "shipping_street", "123 Default Way"),
+                        "city": getattr(row, "shipping_city", "Default Ville"),
+                        "state": getattr(row, "shipping_state", "OH"),
+                        "postal_code": getattr(row, "shipping_postal", "00000"),
+                    },
                 }
             )
 

@@ -12,6 +12,7 @@ members = [
     "finance",
     "notifications",
     "observability",
+    "ops-agent",
     "outbox-daemon",
     "sales",
     "shipping",
@@ -441,10 +442,17 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 
+[package.optional-dependencies]
+web = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "confluent-kafka", extras = ["avro", "schemaregistry"], specifier = ">=2.3.0" },
+    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.110.0" },
     { name = "langgraph", specifier = ">=0.1.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0.1" },
     { name = "observability", editable = "observability" },
@@ -454,7 +462,9 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.24.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
+    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.28.0" },
 ]
+provides-extras = ["web"]
 
 [[package]]
 name = "googleapis-common-protos"
@@ -1102,6 +1112,39 @@ wheels = [
 ]
 
 [[package]]
+name = "ops-agent"
+version = "0.1.0"
+source = { editable = "ops_agent" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-sdk" },
+    { name = "psycopg2-binary" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.110.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "opentelemetry-api", specifier = ">=1.24.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.24.0" },
+    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.45b0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.24.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.9" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "ruff", specifier = ">=0.3.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.27" },
+    { name = "uvicorn", specifier = ">=0.28.0" },
+]
+
+[[package]]
 name = "orjson"
 version = "3.11.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1688,6 +1731,7 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-confluent-kafka" },
     { name = "opentelemetry-sdk" },
+    { name = "ops-agent" },
     { name = "outbox-daemon" },
     { name = "pytest" },
     { name = "sales" },
@@ -1704,6 +1748,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.24.0" },
     { name = "opentelemetry-instrumentation-confluent-kafka", specifier = ">=0.45b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.24.0" },
+    { name = "ops-agent", editable = "ops_agent" },
     { name = "outbox-daemon", editable = "outbox_daemon" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "sales", editable = "sales" },

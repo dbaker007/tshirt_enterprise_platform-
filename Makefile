@@ -61,6 +61,8 @@ kube-platform-start: kube-cluster-init kube-infra-start ## Provision cluster, in
 	@$(MAKE) kube-orchestrator-start
 	@$(MAKE) kube-shipping-start
 	@$(MAKE) kube-finance-start
+	@$(MAKE) kube-finance-api-start
+	@$(MAKE) kube-ops-agent-start
 	@$(MAKE) kube-notifications-start
 	@$(MAKE) kube-outbox-daemon-start
 	@$(MAKE) kube-ports-start
@@ -69,30 +71,9 @@ kube-platform-start: kube-cluster-init kube-infra-start ## Provision cluster, in
 .PHONY: kube-platform-stop
 kube-platform-stop: ## Forcefully wipe all workloads, background pods, and temporary migration jobs from the cluster namespace
 	@echo "🛑 Flushing all declarative deployment pods and transient jobs from cluster memory..."
-	@kubectl delete deployments,jobs --all -n explorer-zone --force --grace-period=0
+	@kubectl delete deployments,statefulsets,replicasets,jobs,pods --all -n explorer-zone --force --grace-period=0 || true
+	@$(MAKE) kube-ports-stop
 	@echo "✔ [SUCCESS]: Complete cluster workspace canvas has been reset."
-
-# =========================================================================
-# 🐍 LOCAL MAC HOST WORKSPACE MANAGEMENT (uv Execution Track)
-# =========================================================================
-# =========================================================================
-# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
-# =========================================================================
-# =========================================================================
-# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
-# =========================================================================
-
-# =========================================================================
-# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
-# =========================================================================
-
-# =========================================================================
-# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
-# =========================================================================
-
-# =========================================================================
-# 🏗️  INFRASTRUCTURE LIFECYCLE CONTROLS (Prerequisite Bootstrap Targets)
-# =========================================================================
 
 .PHONY: kube-cluster-init
 kube-cluster-init: ## Provision a fresh, isolated local Kubernetes node instance from raw host hardware
@@ -127,6 +108,8 @@ local-platform-start: system-init  ## Spawn ALL decoupled background application
 	@$(MAKE) local-shipping-start
 	@$(MAKE) local-finance-start
 	@$(MAKE) local-notifications-start
+	@$(MAKE) local-finance-api-start
+	@$(MAKE) local-ops-agent-start
 	@echo "✔ [SUCCESS]: All local host application services safely aligned to execution targets."
 
 .PHONY: local-platform-stop
@@ -157,9 +140,16 @@ kube-sales-api-start: kube-namespace-init ## Compile, sideload, and execute a se
 
 .PHONY: local-sales-api-start
 local-sales-api-start: system-init ## Launch the Sales FastAPI gateway service locally on your Mac Mini host ports
-	@echo "🔌 Starting local Sales Order Entry API Gateway on port 8000..."
+	@echo "🔌 Starting local Sales Order Entry API Gateway on port 8000 with workspace watch modules active..."
 	@PYTHONPATH="sales/src:observability/src" OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
-		uv run uvicorn sales.order_entry.main:app --host 0.0.0.0 --port 8000 > sales_api.log 2>&1 &
+		uv run uvicorn sales.order_entry.main:app \
+			--host 0.0.0.0 \
+			--port 8000 \
+			--reload \
+			--reload-dir sales \
+			--reload-dir ui \
+			> sales_api.log 2>&1 &
+
 
 # --- DOMAIN: SAGA ORCHESTRATOR ---
 .PHONY: kube-orchestrator-start
@@ -335,7 +325,7 @@ test-all: ## Execute all microservice unit tests sequentially and fail-fast if a
 	@FAILED=0; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "🛍️  1. Running Sales Domain Test Matrix..."; \
-	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest sales/tests/) || FAILED=1; \
+	(PYTHONPATH=".:sales/src:ui" DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest sales/tests/) || FAILED=1; \
 	echo "--------------------------------------------------------------------------------="; \
 	echo "💰 2. Running Finance Domain Test Matrix..."; \
 	(DATABASE_URL="sqlite:///:memory:" OTEL_TRACES_EXPORTER="none" uv run pytest finance/tests/) || FAILED=1; \
@@ -372,3 +362,52 @@ kube-namespace-init: kube-cluster-init ## Provision and isolate the core platfor
 test-integration: ## Execute complete cross-domain integration test suite against the active cluster mesh
 	@echo "📡 Running cross-domain Saga integration tests against live cluster..."
 	@pytest tests/integration/ -v
+
+.PHONY: local-ops-agent-start
+local-ops-agent-start: system-init ## Launch the Ops Agent natural language automation service locally
+	@echo "🔌 Starting local Ops Agent Engine on port 8005..."
+	@PYTHONPATH="ops_agent/src:observability/src" \
+		OTEL_PROPAGATORS=tracecontext OTEL_TRACE_FLAGS=01 \
+		uv run uvicorn ops_agent.main:app --host 0.0.0.0 --port 8005 --reload > ops_agent.log 2>&1 &
+
+.PHONY: local-finance-api-start
+local-finance-api-start: ## Launch the Finance programmatic FastAPI web view endpoint engine locally on port 8001
+	@echo "🔌 Starting local Finance Data Shard Web API on port 8001..."
+	@PYTHONPATH="finance/src:observability/src" \
+		uv run uvicorn finance.web:app --host 0.0.0.0 --port 8001 > finance_api.log 2>&1 &
+
+.PHONY: kube-finance-api-start
+kube-finance-api-start: system-init ## Compile, sideload, and execute a rolling update bounce on cluster Finance web API server
+	@echo "💰 Compiling cluster Finance data shard web API service image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/finance-api:latest -f platform_infra/finance-api.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/finance-api:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/finance-api.yaml
+	@echo "🚀 Restarting finance programmatic web API pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/finance-api -n explorer-zone
+	@echo "⏳ Waiting for fresh finance web API container sockets to initialize..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/finance-api --timeout=90s
+	@$(MAKE) kube-ports-start
+	@echo "✔ [SUCCESS]: Finance programmatic web view engine API is live inside the cluster mesh."
+
+.PHONY: local-ops-agent-stop
+local-ops-agent-stop: ## Forcefully terminate ONLY the local host Ops Agent process
+	@echo "🛑 Stopping local Ops Agent Engine..."
+	@pkill -9 -f "ops_agent.main" || true
+
+.PHONY: local-finance-api-stop
+local-finance-api-stop: ## Forcefully terminate ONLY the local host Finance Web API process
+	@echo "🛑 Stopping local Finance Data Shard Web API..."
+	@pkill -9 -f "finance.web" || true
+
+.PHONY: kube-ops-agent-start
+kube-ops-agent-start: system-init ## Compile, sideload, and execute a rolling update bounce on cluster AI Operations Agent server
+	@echo "🧠 Compiling cluster AI Operations Agent service image..."
+	@docker build --no-cache -t tshirt-enterprise-platform/ops-agent:latest -f platform_infra/ops-agent.Dockerfile .
+	@kind load docker-image tshirt-enterprise-platform/ops-agent:latest --name sandbox-fabric
+	@kubectl apply -f platform_infra/ops-agent.yaml
+	@echo "🚀 Restarting AI Operations Agent reasoning pods inside the cluster mesh..."
+	@kubectl rollout restart deployment/ops-agent -n explorer-zone
+	@echo "⏳ Waiting for fresh AI Operations Agent container sockets to initialize..."
+	@kubectl wait --namespace explorer-zone --for=condition=available deployment/ops-agent --timeout=90s
+	@$(MAKE) kube-ports-start
+	@echo "✔ [SUCCESS]: AI Operations Agent reasoning engine is live inside the cluster mesh."

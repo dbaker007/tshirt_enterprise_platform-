@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-api
+  namespace: explorer-zone
+  labels:
+    app: finance-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finance-api
+  template:
+    metadata:
+      labels:
+        app: finance-api
+      annotations:
+        platform.dev/compiled-at: "DEPLOYMENT_TIMESTAMP"
+    spec:
+      containers:
+      - name: web-api-server
+        image: tshirt-enterprise-platform/finance-api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8001
+        env:
+        - name: DATABASE_HOST
+          value: "postgres-service"
+        - name: FINANCE_DB_PORT
+          value: "5432"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4318/v1/traces"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-api
+  namespace: explorer-zone
+  labels:
+    app: finance-api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8001
+    targetPort: 8001
+    protocol: TCP
+  selector:
+    app: finance-api

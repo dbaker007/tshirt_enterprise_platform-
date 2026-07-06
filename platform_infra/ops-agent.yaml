@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops-agent
+  namespace: explorer-zone
+  labels:
+    app: ops-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ops-agent
+  template:
+    metadata:
+      labels:
+        app: ops-agent
+      annotations:
+        platform.dev/compiled-at: "DEPLOYMENT_TIMESTAMP"
+    spec:
+      containers:
+      - name: reasoning-agent-server
+        image: tshirt-enterprise-platform/ops-agent:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8005
+        env:
+        # 🟢 SOLUTION: Bridge the isolated pod network straight back onto your host's Ollama hardware socket! [1.1]
+        - name: LOCAL_LLM_URL
+          value: "http://host.docker.internal:11434/api/chat"
+        - name: LOCAL_LLM_MODEL
+          value: "llama3.1:8b"
+        # Map internal cluster host names for the service mesh destination lookups [1.1]
+        - name: SALES_API_URL
+          value: "http://sales-order-entry-service:8000"
+        - name: FINANCE_API_URL
+          value: "http://finance-api:8001"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4318/v1/traces"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ops-agent
+  namespace: explorer-zone
+  labels:
+    app: ops-agent
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8005
+    targetPort: 8005
+    protocol: TCP
+  selector:
+    app: ops-agent

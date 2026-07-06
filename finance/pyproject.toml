@@ -18,6 +18,12 @@ dependencies = [
     "observability"
 ]
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0"
+]
+
 [tool.uv]
 managed = true
 

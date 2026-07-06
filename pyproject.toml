@@ -8,6 +8,7 @@ dependencies = [
     "shipping",
     "finance",
     "notifications",
+    "ops-agent",
     "observability",
     "outbox_daemon",
     "opentelemetry-api>=1.24.0",
@@ -24,6 +25,7 @@ finance = { workspace = true }
 notifications = { workspace = true }
 observability = { workspace = true }
 outbox_daemon = { workspace = true }
+ops-agent = { workspace = true }
 
 [tool.uv.workspace]
 members = [
@@ -32,5 +34,6 @@ members = [
     "shipping",
     "notifications",
     "observability",
-    "outbox_daemon"
+    "outbox_daemon",
+    "ops_agent"
 ]
