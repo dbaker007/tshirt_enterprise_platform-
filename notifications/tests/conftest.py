@@ -1,6 +1,10 @@
+# notifications/tests/conftest.py
+
 import pytest
 from notifications.db import Base
-from observability.outbox import Base as OutboxBase
+
+# 🟢 SOLUTION: Import the clean Core metadata object instead of the legacy ORM class! [1.1]
+from observability.outbox import metadata as outbox_metadata
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -8,7 +12,6 @@ from sqlalchemy.orm import sessionmaker
 @pytest.fixture(scope="function")
 def test_db_session():
     """Generates a high-speed, completely isolated SQL database canvas inside volatile RAM
-
     by pinning a single persistent connection across asynchronous task threads [1.1].
     """
     # Use a standard, clean in-memory database engine pool
@@ -16,12 +19,14 @@ def test_db_session():
         "sqlite:///:memory:", connect_args={"check_same_thread": False}
     )
 
-    # 🟢 SOLUTION: Open and preserve a single raw connection channel handle! [1.1]
+    # Open and preserve a single raw connection channel handle! [1.1]
     connection = test_engine.connect()
 
     # Draw the relational schemas directly inside this specific connection space [1.1]
     Base.metadata.create_all(bind=connection)
-    OutboxBase.metadata.create_all(bind=connection)
+
+    # 🟢 SOLUTION: Draw the abstract outbox logging structure onto your persistent connection! [1.1]
+    outbox_metadata.create_all(bind=connection)
 
     # Build an independent session maker factory bound directly to the persistent connection channel [1.1]
     TestingSessionLocal = sessionmaker(

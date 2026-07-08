@@ -1,3 +1,4 @@
+# platform_infra/postgres-db.yaml
 # =========================================================================
 # 🗄️ 1. THE HARDWARE STORAGE CLAIM TICKET (PersistentVolumeClaim)
 # =========================================================================
@@ -36,6 +37,10 @@ spec:
       - name: postgres-data-volume
         persistentVolumeClaim:
           claimName: postgres-storage-claim
+      # 🟢 SOLUTION: Expose the config map layout as an immutable virtual script volume
+      - name: postgres-init-script-volume
+        configMap:
+          name: postgres-schema-config
       containers:
       - name: postgres-db
         image: postgres:15-bookworm
@@ -54,6 +59,9 @@ spec:
         volumeMounts:
         - name: postgres-data-volume
           mountPath: /var/lib/postgresql/data/
+        # 🟢 SOLUTION: Mount the initialization file straight into the postgres startup entrypoint lifecycle directory!
+        - name: postgres-init-script-volume
+          mountPath: /docker-entrypoint-initdb.d/
 
 ---
 # =========================================================================

@@ -1,3 +1,5 @@
+# shipping/src/shipping/db.py
+
 import os
 from datetime import datetime
 
@@ -20,8 +22,15 @@ class ShippingLedger(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# =========================================================================
+# 🟢 HYBRID SHARD SCHEMAS INITIALIZATION
+# =========================================================================
 def init_shipping_db(engine) -> None:
-    """Binds and maps the core relational schema definitions straight onto the provided engine runtime context."""
+    """Binds and maps the core relational shipping schemas straight onto the shipping_domain shard."""
+    # 🟢 SOLUTION: Wall off shipping business state data inside its private schema workspace [1.1]
+    TARGET_SCHEMA = "shipping_domain"
+    Base.metadata.schema = TARGET_SCHEMA
+
     Base.metadata.create_all(bind=engine)
 
 
@@ -33,6 +42,9 @@ async def get_shipping_checkpointer() -> AsyncSqliteSaver:
     return AsyncSqliteSaver.from_conn_string(checkpoint_db_path)
 
 
+# =========================================================================
+# 🟢 STATELESS DATA ACCESS WORKERS (Shared Unit-of-Work Targets)
+# =========================================================================
 def persist_shipping_ledger_record(
     db: Session, order_id: str, ledger_status: str
 ) -> None:
@@ -67,10 +79,8 @@ def stage_shipping_saga_reply(
     ledger_status: str,
 ) -> None:
     """Stateless data access worker.
-
     Packages the standardized saga contract and routes it into the central platform outbox.
     """
-
     reply_envelope = {
         "order_id": str(order_id),
         "department": "SHIPPING",
@@ -79,6 +89,7 @@ def stage_shipping_saga_reply(
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
+    # 🟢 SOLUTION: Dispatches straight to your pristine, un-translated public outbox logging framework [1.1]
     stage_outbox_message(
         db=db,
         topic="saga_replies",

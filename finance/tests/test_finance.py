@@ -144,10 +144,11 @@ def test_database_and_orchestrator_contract_validity(test_db_session):
     assert ledger is not None
     assert ledger.execution_status == CREDIT_APPROVED
 
+    # 🟢 SOLUTION: Access the Row primitive thread-safely using standard ._mapping dict lookups!
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
-    assert outbox.topic == "saga_replies"
-    assert outbox.partition_key == order_id
+    assert outbox._mapping["topic"] == "saga_replies"
+    assert outbox._mapping["partition_key"] == order_id
 
 
 @pytest.mark.anyio

@@ -1,3 +1,5 @@
+# sales/src/sales/order_entry/main.py (PART 1)
+
 import logging
 import os
 import sys
@@ -39,6 +41,7 @@ logger = logging.getLogger("SALES_GATEWAY")
 LOCAL_PORT = os.environ.get("SALES_GATEWAY_DB_PORT", "5432")
 DATABASE_URL = get_platform_database_url(port=LOCAL_PORT)
 
+# 🟢 SOLUTION: Keep the database connection pool clean, raw, and un-intercepted [1.1]
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -161,6 +164,9 @@ async def create_sale(transaction: dict):
 # =========================================================================
 
 
+# sales/src/sales/order_entry/main.py (PART 2)
+
+
 @app.post("/sales/override")
 async def override_sale(verdict_payload: dict):
     """Public gateway risk override checkpoint for manual human operator review holds."""
@@ -192,8 +198,9 @@ async def override_sale(verdict_payload: dict):
                 db.query(SagaState).filter(SagaState.order_id == str(order_id)).first()
             )
             if not state_record:
+                # 🟢 SOLUTION: Corrected status code layout to a standard HTTP 404 block
                 raise HTTPException(
-                    status_code=44,
+                    status_code=404,
                     detail=f"Transaction context matching UUID {order_id} not found.",
                 )
 

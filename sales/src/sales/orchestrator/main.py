@@ -1,3 +1,5 @@
+# sales/src/sales/orchestrator/main.py
+
 import uuid
 
 from observability.db import get_platform_database_url
@@ -11,7 +13,6 @@ from sqlalchemy.orm import sessionmaker
 
 class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
     """Concrete child class that inherits all Kafka polling loops and telemetry
-
     context management out-of-band, executing the Central Sales Saga workflow check-offs.
     """
 
@@ -20,6 +21,7 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
         database_url = get_platform_database_url()
 
         # 2. Instantiate and own the database driver connection engine pool safely [1.1]
+        # 🟢 SOLUTION: Keep the database connection pool clean, raw, and un-intercepted [1.1]
         self.engine = create_engine(database_url)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine
@@ -105,6 +107,7 @@ class SalesSagaOrchestratorApplication(MicroserviceConsumerApp):
                 "payload": context_payload,
             }
 
+            # 🟢 SOLUTION: Dispatches straight to your pristine, un-translated public outbox logging framework [1.1]
             stage_outbox_message(
                 db=db, topic=queue_topic, partition_key=order_id, payload=envelope
             )

@@ -1,3 +1,5 @@
+# sales/src/sales/order_entry/db.py
+
 import logging
 import os
 import uuid
@@ -5,7 +7,7 @@ from datetime import datetime
 
 from observability.outbox import stage_outbox_message
 
-# 🟢 SOLUTION: Import the single source of truth shared base and model!
+# 🟢 SOURCE OF TRUTH BASE MODELS MAPPING
 from sales.shared_models import SagaState, SharedBase
 from sqlalchemy import Column, DateTime, Float, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Session
@@ -35,11 +37,17 @@ class Invoice(Base):
     amount = Column(Float, index=True)
 
 
-# 🟢 SOLUTION: Accept the engine runtime parameter context explicitly!
+# =========================================================================
+# 🟢 HYBRID SHARD SCHEMAS INITIALIZATION
+# =========================================================================
 def init_sales_db(engine) -> None:
-    """Binds and maps the core sales order schema definitions straight onto the provided engines."""
+    """Binds and maps the core sales order schemas directly onto the sales_domain logical shard."""
+    # 🟢 SOLUTION: Wall off core sales business tables inside the isolated schema namespace [1.1]
+    TARGET_SCHEMA = "sales_domain"
+    Base.metadata.schema = TARGET_SCHEMA
+    SharedBase.metadata.schema = TARGET_SCHEMA
+
     Base.metadata.create_all(bind=engine)
-    # 🟢 SOLUTION: Map the centralized shared model components onto this database engine as well!
     SharedBase.metadata.create_all(bind=engine)
 
 
@@ -76,7 +84,6 @@ def persist_invoice_record(
     return new_invoice
 
 
-# 🟢 SOLUTION: Update the signature to accept and persist the transaction payload variables!
 def initialize_saga_state_tracking(
     db: Session, order_id: str, avro_payload: dict
 ) -> None:
@@ -89,7 +96,6 @@ def initialize_saga_state_tracking(
         finance_status="PENDING",
         shipping_status="PENDING",
         notifications_status="PENDING",
-        # 🟢 SOLUTION: Populate the tracking metrics columns natively during checkout!
         customer_name=str(avro_payload.get("customer_name", "Unknown Buyer")),
         customer_email=str(
             avro_payload.get("customer_email", "unknown@platform.internal")
@@ -121,6 +127,7 @@ def stage_saga_command_envelopes(
             "action": "NEW_SALE",
             "payload": avro_payload,
         }
+        # 🟢 SOLUTION: Dispatches straight to your pristine, un-translated public outbox logging framework [1.1]
         stage_outbox_message(
             db=db,
             topic=queue_topic,

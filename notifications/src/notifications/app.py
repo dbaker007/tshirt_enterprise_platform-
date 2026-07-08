@@ -1,3 +1,5 @@
+# notifications/src/notifications/app.py
+
 from observability.db import get_platform_database_url
 from observability.framework.app_base import MicroserviceConsumerApp
 from sqlalchemy import create_engine
@@ -9,7 +11,6 @@ from notifications.graph import notifications_graph_engine
 
 class NotificationsConsumerApplication(MicroserviceConsumerApp):
     """Concrete child class that inherits all Kafka polling loops and telemetry
-
     context management out-of-band, executing the Notifications subgraph.
     """
 
@@ -18,6 +19,7 @@ class NotificationsConsumerApplication(MicroserviceConsumerApp):
         database_url = get_platform_database_url()
 
         # 2. Instantiate and own the database driver connection engine pool safely [1.1]
+        # 🟢 SOLUTION: Keep the database connection pool clean, raw, and un-intercepted [1.1]
         self.engine = create_engine(database_url)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine

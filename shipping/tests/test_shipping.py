@@ -1,3 +1,5 @@
+# shipping/tests/test_shipping.py
+
 import json
 from unittest.mock import MagicMock, patch
 
@@ -39,7 +41,6 @@ def test_shipping_consumer_app_forwards_payload_and_action_to_graph(
     mock_graph_invoke, test_db_session
 ):
     """Verifies that the parent application wrapper accurately initializes and forwards
-
     both the event data and action context into the LangGraph engine on ingestion loops.
     """
 
@@ -123,7 +124,6 @@ def test_shipping_graph_triggers_compensation_rollback_on_cancel(test_db_session
 
 def test_database_persistence_and_orchestrator_payload_contract(test_db_session):
     """Verifies that shipping operations write the semantic reason to the ledger
-
     while passing pure control signals onto the orchestration wire.
     """
     db = test_db_session
@@ -148,16 +148,16 @@ def test_database_persistence_and_orchestrator_payload_contract(test_db_session)
 
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
-    assert outbox.topic == "saga_replies"
+    # 🟢 SOLUTION: Access the Row primitive thread-safely using standard ._mapping dict lookups! [1.1]
+    assert outbox._mapping["topic"] == "saga_replies"
 
-    parsed_payload = json.loads(outbox.payload)
+    parsed_payload = json.loads(outbox._mapping["payload"])
     assert parsed_payload["status"] == "SUCCESS"
     assert parsed_payload["ledger_status"] == SUCCESS
 
 
 def test_compensation_rollback_writes_failure_control_signal_correctly(test_db_session):
     """Verifies that a failure branch records the semantic cause to the ledger
-
     and transmits the rigid 'FAILED' control signal to trigger sagas rollbacks.
     """
     db = test_db_session
@@ -183,7 +183,8 @@ def test_compensation_rollback_writes_failure_control_signal_correctly(test_db_s
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
 
-    parsed_payload = json.loads(outbox.payload)
+    # 🟢 SOLUTION: Access the Row primitive thread-safely using standard ._mapping dict lookups! [1.1]
+    parsed_payload = json.loads(outbox._mapping["payload"])
     assert parsed_payload["status"] == "FAILED"
     assert parsed_payload["ledger_status"] == LEGAL_REJECTION_MI
 
@@ -212,5 +213,6 @@ def test_database_persistence_and_universal_outbox_mirror(test_db_session):
 
     outbox = db.execute(text("SELECT * FROM platform_outbox;")).fetchone()
     assert outbox is not None
-    assert outbox.topic == "saga_replies"
-    assert outbox.partition_key == "ship-compliance-999"
+    # 🟢 SOLUTION: Access the Row primitive thread-safely using standard ._mapping dict lookups! [1.1]
+    assert outbox._mapping["topic"] == "saga_replies"
+    assert outbox._mapping["partition_key"] == "ship-compliance-999"

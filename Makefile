@@ -210,8 +210,6 @@ kube-db-start: kube-namespace-init
 	@kubectl apply -f platform_infra/postgres-db.yaml
 	@kubectl rollout restart deployment/postgres-db -n explorer-zone
 	@kubectl wait --namespace explorer-zone --for=condition=available deployment/postgres-db --timeout=90s
-	@kubectl delete job platform-schema-migrator -n explorer-zone --ignore-not-found=true
-	@kubectl apply -f platform_infra/postgres-migrator-job.yaml
 
 .PHONY: kube-kafka-start
 kube-kafka-start: kube-namespace-init

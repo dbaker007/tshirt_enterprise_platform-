@@ -1,3 +1,5 @@
+# finance/src/finance/app.py
+
 import asyncio
 
 from langgraph.errors import GraphInterrupt
@@ -13,7 +15,6 @@ from finance.graph import builder
 
 class FinanceConsumerApplication(MicroserviceConsumerApp):
     """Concrete child class that inherits all Kafka polling loops and telemetry
-
     context management out-of-band, executing the Finance LangGraph pipeline.
     """
 
@@ -22,6 +23,7 @@ class FinanceConsumerApplication(MicroserviceConsumerApp):
         database_url = get_platform_database_url()
 
         # 2. Instantiate and own the database driver connection engine pool safely [1.1]
+        # 🟢 SOLUTION: Kept the database connection pool clean, raw, and un-intercepted [1.1]
         self.engine = create_engine(database_url)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine

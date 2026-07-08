@@ -1,3 +1,5 @@
+# shipping/src/shipping/app.py
+
 import logging
 
 from observability.db import get_platform_database_url
@@ -11,7 +13,6 @@ from shipping.graph import shipping_graph_engine
 
 class ShippingConsumerApplication(MicroserviceConsumerApp):
     """Concrete child class that inherits all Kafka polling loops and telemetry
-
     context management out-of-band, executing the Shipping LangGraph logistics pipeline.
     """
 
@@ -20,6 +21,7 @@ class ShippingConsumerApplication(MicroserviceConsumerApp):
         database_url = get_platform_database_url()
 
         # 2. Instantiate and own the database driver connection engine pool safely [1.1]
+        # 🟢 SOLUTION: Keep the database connection pool clean, raw, and un-intercepted [1.1]
         self.engine = create_engine(database_url)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine

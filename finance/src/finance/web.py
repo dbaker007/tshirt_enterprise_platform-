@@ -1,3 +1,5 @@
+# finance/src/finance/web.py
+
 import logging
 import sys
 
@@ -18,6 +20,7 @@ logger = logging.getLogger("FINANCE_API_SHARD")
 
 # 1. Dynamically retrieve the identical centralized database URL credentials string [1.1]
 DATABASE_URL = get_platform_database_url()
+# 🟢 SOLUTION: Keep the query plane engine pool clean, raw, and aligned with metadata boundaries
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -1,3 +1,5 @@
+# finance/src/finance/graph.py (PART 1)
+
 import logging
 from typing import Any, Dict, Literal
 
@@ -130,7 +132,7 @@ def execute_approval(state: FinanceState, config: RunnableConfig) -> Dict[str, A
         order_id = event.get("order_id", "unknown-uuid")
         logger.info(f"Financial Clearance Engine Approved | Order UUID: {order_id}")
 
-        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE
         db = config.get("configurable", {}).get("db")
         if not db:
             raise RuntimeError(
@@ -156,7 +158,7 @@ def execute_fraud_rejection(
         )
         logger.warning(f"Financial Clearance Engine Aborted | Order UUID: {order_id}")
 
-        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE
         db = config.get("configurable", {}).get("db")
         if not db:
             raise RuntimeError(
@@ -182,7 +184,7 @@ def execute_compensation_rollback(
             f"Financial Compensation Fired | Releasing credit line for Order: {order_id}"
         )
 
-        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE
         db = config.get("configurable", {}).get("db")
         if not db:
             raise RuntimeError(

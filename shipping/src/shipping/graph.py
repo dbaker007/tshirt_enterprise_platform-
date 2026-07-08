@@ -1,3 +1,5 @@
+# shipping/src/shipping/graph.py
+
 import logging
 from typing import Any, Dict, Literal
 
@@ -80,7 +82,7 @@ def execute_fulfillment(state: ShippingState, config: RunnableConfig) -> Dict[st
             f"Fulfillment Node Approved | Securing freight routes for Order: {order_id}"
         )
 
-        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE
         db = config.get("configurable", {}).get("db")
         if not db:
             raise RuntimeError(
@@ -111,7 +113,7 @@ def execute_legal_rejection(
             f"Fulfillment Node Aborted | Staging Legal holds for Order: {order_id}"
         )
 
-        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE
         db = config.get("configurable", {}).get("db")
         if not db:
             raise RuntimeError(
@@ -139,7 +141,7 @@ def execute_compensation_rollback(
             f"Compensation Node Fired | Releasing freight routes for Order: {order_id}"
         )
 
-        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE [1.1]
+        # 🟢 EXTRACT ACTIVE DATABASE SESSION NATIVELY FROM RUNTIME SCOPE
         db = config.get("configurable", {}).get("db")
         if not db:
             raise RuntimeError(
@@ -189,4 +191,5 @@ builder.add_edge("execute_fulfillment", END)
 builder.add_edge("execute_legal_rejection", END)
 builder.add_edge("execute_compensation_rollback", END)
 
+# 🟢 SOLUTION: Graph engine compiled natively as-is without database intercept constraints
 shipping_graph_engine = builder.compile()

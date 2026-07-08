@@ -1,10 +1,15 @@
+# observability/tests/test_observability_core.py
+
 import json
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from observability.outbox import Base, PlatformOutboxRecord, stage_outbox_message
+
+# 🟢 SOLUTION: Import your new Core metadata and outbox_table instead of the legacy ORM classes! [1.1]
+from observability.outbox import metadata, outbox_table, stage_outbox_message
 from observability.tracing import KafkaHeaderGetter, kafka_getter
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 
@@ -12,7 +17,8 @@ from sqlalchemy.orm import sessionmaker
 def test_ram_session():
     """Generates an independent, isolated relational memory canvas for shared utility tests."""
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(bind=engine)
+    # 🟢 SOLUTION: Bind and draw the abstract core metadata tables onto the local SQLite memory canvas! [1.1]
+    metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(bind=engine)
     session = TestingSessionLocal()
     try:
@@ -23,7 +29,6 @@ def test_ram_session():
 
 def test_stage_outbox_message_successfully_injects_and_serializes(test_ram_session):
     """Verifies that the shared outbox utility correctly captures thread payloads
-
     and dual-writes an explicit JSON string entry straight into the platform table log.
     """
     mock_payload = {"order_id": "global-test-uuid-999", "status": "APPROVED"}
@@ -37,12 +42,16 @@ def test_stage_outbox_message_successfully_injects_and_serializes(test_ram_sessi
 
     assert success is True
 
-    record = test_ram_session.query(PlatformOutboxRecord).first()
-    assert record is not None
-    assert record.topic == "test_topic"
-    assert record.partition_key == "global-test-uuid-999"
+    # 🟢 SOLUTION: Use core select execution models instead of the old legacy ORM tracking models! [1.1]
+    query = select(outbox_table)
+    record = test_ram_session.execute(query).fetchone()
 
-    parsed_payload = json.loads(record.payload)
+    assert record is not None
+    # SQLAlchemy Core rows can be accessed via column name string tokens directly [1.1]
+    assert record._mapping["topic"] == "test_topic"
+    assert record._mapping["partition_key"] == "global-test-uuid-999"
+
+    parsed_payload = json.loads(record._mapping["payload"])
     assert parsed_payload["order_id"] == "global-test-uuid-999"
 
 
@@ -50,11 +59,8 @@ def test_stage_outbox_message_raises_exception_on_serialization_failure(
     test_ram_session,
 ):
     """Verifies that the outbox utility throws an explicit exception if the payload contains
-
     non-serializable data, preventing silent data drops down the pipeline.
     """
-    from datetime import datetime
-
     broken_payload = {"timestamp": datetime.utcnow()}
 
     with pytest.raises(Exception):
@@ -68,7 +74,6 @@ def test_stage_outbox_message_raises_exception_on_serialization_failure(
 
 def test_kafka_header_getter_resolves_byte_and_string_keys_cleanly():
     """Verifies that the case-insensitive W3C header getter parses both raw wire
-
     bytes and text string tokens without throwing string allocation exceptions.
     """
     getter = KafkaHeaderGetter()

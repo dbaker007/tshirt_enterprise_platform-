@@ -1,3 +1,5 @@
+# notifications/src/notifications/db.py
+
 from datetime import datetime
 
 from observability.outbox import stage_outbox_message
@@ -19,11 +21,21 @@ class CommunicationLedger(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# =========================================================================
+# 🟢 HYBRID SHARD SCHEMAS INITIALIZATION
+# =========================================================================
 def init_notifications_db(engine) -> None:
-    """Binds and maps the core relational schema definitions straight onto the provided engine runtime context."""
+    """Binds and maps the business communication schemas straight onto the notifications_domain shard."""
+    # 🟢 SOLUTION: Wall off internal notification data records into their private schema workspace [1.1]
+    TARGET_SCHEMA = "notifications_domain"
+    Base.metadata.schema = TARGET_SCHEMA
+
     Base.metadata.create_all(bind=engine)
 
 
+# =========================================================================
+# 🟢 STATELESS DATA ACCESS WORKERS (Shared Unit-of-Work Targets)
+# =========================================================================
 def persist_communication_ledger_record(
     db: Session, order_id: str, customer_name: str, ledger_status: str
 ) -> None:
@@ -59,7 +71,6 @@ def stage_notifications_saga_reply(
     db: Session, order_id: str, wire_status: str, ledger_status: str
 ) -> None:
     """Stateless data access worker.
-
     Packages the standardized saga contract and routes it into the central platform outbox.
     """
     reply_envelope = {
@@ -70,6 +81,7 @@ def stage_notifications_saga_reply(
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
+    # 🟢 SOLUTION: Dispatches straight to your pristine, un-translated public outbox logging framework [1.1]
     stage_outbox_message(
         db=db,
         topic="saga_replies",
