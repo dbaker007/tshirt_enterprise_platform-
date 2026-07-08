@@ -7,6 +7,8 @@ SHELL := /bin/sh
 
 .PHONY: help
 help: ## Display this workspace help matrix map cleanly on your screen
+	@echo "💡  Start Docker: open -a Docker"
+	@echo "💡 Make sure to open a separate terminal tab and run: sudo cloud-provider-kind"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 # =========================================================================
@@ -36,19 +38,15 @@ kube-infra-start: kube-namespace-init ## Deploy and initialize complete infrastr
 	
 	@echo "⏳ Waiting for PostgreSQL container storage volumes to mount cleanly..."
 	@kubectl wait --namespace explorer-zone --for=condition=available deployment/postgres-db --timeout=120s
-
 	@echo "📊 5. Standing up centralized Jaeger Distributed Telemetry Core..."
 	@kubectl apply -f platform_infra/jaeger.yaml
 	@echo "⏳ Waiting for Jaeger collector engine network sockets to initialize..."
 	@kubectl rollout status deployment/jaeger -n explorer-zone --timeout=120s
-
 	@echo "🏁 6. Allowing cluster CoreDNS service discovery networks to stabilize..."
 	@sleep 10
-	
 	@echo "📡 7. Standing up dual-listener KRaft Message Bus and Schema Registry sidecar..."
 	@kubectl apply -f platform_infra/enterprise-kafka-broker.yaml
 	@echo "⏳ Waiting for KRaft broker rollout stream to finalize..."
-	# 🟢 FIX: Replaced the brittle jsonpath wait gate with the bulletproof rollout status tracker! [1.1]
 	@kubectl rollout status deployment/enterprise-kafka-broker -n explorer-zone --timeout=120s
 	
 	@echo "✔ [SUCCESS]: Core platform infrastructure tier is fully operational."
@@ -361,7 +359,7 @@ kube-namespace-init: kube-cluster-init ## Provision and isolate the core platfor
 .PHONY: test-integration
 test-integration: ## Execute complete cross-domain integration test suite against the active cluster mesh
 	@echo "📡 Running cross-domain Saga integration tests against live cluster..."
-	@pytest tests/integration/ -v
+	@uv run pytest tests/integration/ -v -s
 
 .PHONY: local-ops-agent-start
 local-ops-agent-start: system-init ## Launch the Ops Agent natural language automation service locally
