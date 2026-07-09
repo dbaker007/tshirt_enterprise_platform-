@@ -90,6 +90,16 @@ To enforce clean **Database-per-Service** isolation while minimizing infrastruct
 | **`shipping_domain`** | Shipping Fulfillment Worker Service | `shipping_ledger` (Geographical route compliance) |
 | **`notifications_domain`** | Customer Messaging Alert Worker | `communication_ledger` (Broadcast logs) |
 
+## 📡 Apache Kafka Event Distribution Backbone & Avro Contracts
+
+As illustrated in the architecture blueprint, **Apache Kafka** serves as the central, high-throughput event distribution backbone for the entire platform. Rather than using tight, synchronous HTTP couplings, microservices communicate entirely out-of-band by publishing and consuming message streams across decoupled Kafka topics. 
+
+To guarantee strict API data contract compatibility across these asynchronous streams, the platform rejects plain, untyped JSON strings [1.1]. All events are serialized into binary formats using **Apache Avro** and validated on-the-fly against a centralized **Confluent Schema Registry** sidecar [1.1]:
+
+* **`finance_commands`**: Enforces the `command_envelope.avsc` binary schema contract. Kafka routes `NEW_SALE` forward transaction signals or `CANCEL_TRANSACTION` rollbacks directly into the Finance LangGraph pipeline.
+* **`shipping_commands`**: Validates destination address primitives against the universal command envelope schema to feed geographical metadata into the Shipping Worker's topic channel.
+* **`notifications_commands`**: Streams strongly-typed messaging triggers across Kafka to fire welcome invoices or order cancellation alert emails out-of-band.
+* **`saga_replies`**: The central feedback loop topic. Sibling workers broadcast their responses back to this channel, adhering to the strict `saga_reply.avsc` contract. They must provide a rigid, uppercase indicator string (`SUCCESS` or `FAILED`) alongside an explicit description of their internal database ledger states [1.1]. The Sales Saga Orchestrator polls this Kafka topic to safely coordinate global check-offs or trigger compensation runs [1.1].
 
 ## 🚀 Getting Started
 
