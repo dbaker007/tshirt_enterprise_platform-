@@ -1,6 +1,3 @@
-# ops_agent/src/ops_agent/endpoints/agent_routes.py
-
-import asyncio
 import json
 import logging
 import os
@@ -9,7 +6,6 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-# Import your native populated registries and schemas directly from your namespace
 from ops_agent.tools.schemas import (
     AVAILABLE_TOOLS,
     LIST_PENDING_HOLDS_SCHEMA,
